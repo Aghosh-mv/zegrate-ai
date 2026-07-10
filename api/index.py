@@ -82,13 +82,13 @@ def map_model(name: str) -> str:
     if "turbo" in name.lower():
         return "qwen3.5:27b"
     if "zegrate" in name.lower():
-        return "deepseek-builder:latest"
+        return "zegrate-turbo-builder:latest"
     return name
 
 def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False) -> List[Dict[str, str]]:
     if show_thinking:
-        return [THINK_PROMPT] + msgs
-    return msgs
+        return [THINK_PROMPT, PERSONALITY_PROMPT] + msgs
+    return [PERSONALITY_PROMPT] + msgs
 
 def parse_thinking(content: str) -> tuple:
     thinking = ""

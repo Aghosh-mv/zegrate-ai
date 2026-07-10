@@ -89,7 +89,9 @@
     renderModelSelect();
     renderModelCards();
     if (state.models.length && (!state.selectedModel || !state.models.some(m => m.name === state.selectedModel))) {
-      const preferred = state.models.find(m => /zegrate/i.test(m.name));
+      const preferred = state.models.find(m => /zegrate.*langsec/i.test(m.name))
+        || state.models.find(m => /zegrate.*turbo.*builder/i.test(m.name))
+        || state.models.find(m => /zegrate/i.test(m.name));
       state.selectedModel = preferred ? preferred.name : state.models[0].name;
     }
     el.modelSelect.value = state.selectedModel;
@@ -120,14 +122,18 @@
     return '\u2728';
   }
 
+  function isZegrateModel(m) {
+    return /zegrate/i.test(m.name) || (m.details && m.details.family === 'zegrate');
+  }
+
   function renderModelSelect() {
     el.modelSelect.innerHTML = '<option value="">\u2014 Select model \u2014</option>';
-    state.models.forEach((m) => {
+    state.models.filter(isZegrateModel).forEach((m) => {
       const opt = document.createElement('option');
       opt.value = m.name;
       const suffix = m.size ? '  (' + formatSize(m.size) + ')' : '';
       opt.textContent = displayName(m.name) + suffix;
-      if (/zegrate/i.test(m.name)) opt.style.fontWeight = '600';
+      opt.style.fontWeight = '600';
       el.modelSelect.appendChild(opt);
     });
     el.modelSelect.value = state.selectedModel;
@@ -135,7 +141,7 @@
 
   function renderModelCards() {
     el.modelCards.innerHTML = '';
-    const show = state.models.slice(0, 6);
+    const show = state.models.filter(isZegrateModel).slice(0, 6);
     show.forEach((m) => {
       const card = document.createElement('div');
       card.className = 'model-card';
@@ -312,7 +318,8 @@
 
   function formatContent(text) {
     if (!text) return '';
-    let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    let html = text.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+    html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
       const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return '<pre><code' + (lang ? ' class="lang-' + lang + '"' : '') + '>' + escaped + '</code></pre>';
