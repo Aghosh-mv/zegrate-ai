@@ -2,7 +2,7 @@ import os, json, uuid
 from datetime import datetime
 from typing import List, Dict, Optional
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -133,6 +133,10 @@ async def health():
         "mode": "local" if ollama_ok else "cloud",
         "timestamp": datetime.now().isoformat()
     }
+
+@app.get("/model")
+async def model_redirect():
+    return RedirectResponse("https://hf.co/yimn-Aghosh/zegrate-turbo-debugger", status_code=302)
 
 @app.get("/api/models")
 async def list_models():
