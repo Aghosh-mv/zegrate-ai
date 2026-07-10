@@ -17,6 +17,8 @@
     mediaRecorder: null,
     audioChunks: [],
     showThinking: localStorage.getItem('zg-thinking') === 'true',
+    localUrl: localStorage.getItem('zg-local-url') || '',
+    usingLocal: false,
   };
 
   const $ = (s) => document.querySelector(s);
@@ -56,13 +58,20 @@
     el.saveAppBtn         = $('#saveAppBtn');
     el.voiceBtn           = $('#voiceBtn');
     el.thinkingToggle     = $('#thinkingToggle');
+    el.connectBtn         = $('#connectBtn');
+    el.connectStatus      = $('#connectStatus');
   }
 
   /* ============================================================
      API
      ============================================================ */
+  function baseURL() {
+    return state.localUrl || '';
+  }
+
   async function api(path, opts = {}) {
-    const res = await fetch(path, {
+    const url = baseURL() + path;
+    const res = await fetch(url, {
       headers: { 'Content-Type': 'application/json', ...opts.headers },
       ...opts,
     });
@@ -358,7 +367,7 @@
 
     const messagesForAPI = state.messages.map((m) => ({ role: m.role, content: m.content }));
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch(baseURL() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking }),
@@ -454,7 +463,7 @@
       const errDetail = e.message || 'All connection attempts failed';
       let suggestion = 'Make sure the server is running and Ollama is accessible.';
       if (errDetail.includes('Failed to fetch') || errDetail.includes('NetworkError')) {
-        suggestion = 'Backend unreachable. If using Vercel, Ollama must run locally. Try http://localhost:8000 instead.';
+        suggestion = 'Backend unreachable. If using Vercel, click the globe icon (&#127760;) to connect your local server at http://localhost:8000.';
       }
       errDiv.innerHTML = '<div class="message-avatar assistant">AI</div><div class="message-content"><p style="color:var(--danger)">Could not reach the AI backend</p><p style="font-size:13px;opacity:0.7;margin-top:4px">' + escapeHtml(suggestion) + '<br><span style="font-size:12px;opacity:0.5">' + escapeHtml(errDetail) + '</span></p></div>';
       el.chatMessages.appendChild(errDiv);
@@ -685,7 +694,7 @@
 
   async function speakText(text) {
     try {
-      const res = await fetch('/api/tts', {
+      const res = await fetch(baseURL() + '/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.substring(0, 500) }),
@@ -753,6 +762,51 @@
   }
 
   /* ============================================================
+     CONNECTION
+     ============================================================ */
+  window.closeConnectModal = function() {
+    document.getElementById('connectModal').style.display = 'none';
+  };
+
+  function openConnectModal() {
+    document.getElementById('localUrlInput').value = state.localUrl;
+    document.getElementById('connectModal').style.display = 'flex';
+  }
+
+  function saveConnection() {
+    const url = document.getElementById('localUrlInput').value.trim();
+    state.localUrl = url;
+    localStorage.setItem('zg-local-url', url);
+    document.getElementById('connectModal').style.display = 'none';
+    updateConnectStatus();
+    toast(url ? 'Connected to ' + url : 'Using hosted backend');
+    loadModels();
+  }
+
+  function updateConnectStatus() {
+    if (state.localUrl) {
+      el.connectStatus.textContent = '\u26A1 Local';
+      el.connectStatus.style.display = 'inline';
+      el.connectStatus.className = 'connect-status connected';
+    } else {
+      el.connectStatus.style.display = 'none';
+    }
+  }
+
+  async function checkConnection() {
+    try {
+      const res = await fetch(baseURL() + '/api/health');
+      const data = await res.json();
+      if (!data.ollama && !state.localUrl) {
+        el.connectBtn.style.animation = 'pulse 2s infinite';
+        el.connectBtn.title = 'AI backend offline - click to connect local server';
+      } else {
+        el.connectBtn.style.animation = '';
+      }
+    } catch (_) {}
+  }
+
+  /* ============================================================
      TOAST
      ============================================================ */
   function toast(msg) {
@@ -804,6 +858,8 @@
     });
     el.themeToggle.addEventListener('click', toggleTheme);
     el.thinkingToggle.addEventListener('click', toggleThinking);
+    el.connectBtn.addEventListener('click', openConnectModal);
+    document.getElementById('saveConnectBtn').addEventListener('click', saveConnection);
 
     // Todo
     el.addTodoBtn.addEventListener('click', addTodo);
@@ -847,11 +903,13 @@
      ============================================================ */
   async function init() {
     setup();
+    updateConnectStatus();
     await loadModels();
     await loadConversations();
     await loadTodos();
     await loadApps();
     if (state.selectedModel) await startNewChat();
+    checkConnection();
   }
 
   document.addEventListener('DOMContentLoaded', init);

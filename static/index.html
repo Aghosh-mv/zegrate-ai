@@ -67,8 +67,10 @@
         <div class="header-info">
           <span id="currentModelName" class="model-name">Select a model</span>
           <span id="modelStatus" class="model-status idle">Idle</span>
+          <span id="connectStatus" class="connect-status" style="display:none"></span>
         </div>
-        <button id="thinkingToggle" class="icon-btn thinking-toggle" title="Show thinking">&#9881;</button>
+        <button id="connectBtn" class="icon-btn" title="Connect to local server">&#127760;</button>
+        <button id="thinkingToggle" class="icon-btn thinking-toggle" title="Show thinking">&#129504;</button>
         <button id="themeToggle" class="icon-btn" title="Toggle theme">&#9790;</button>
       </header>
 
@@ -128,6 +130,29 @@
       <div class="modal-footer">
         <button class="small-btn" onclick="closeAppModal()">Cancel</button>
         <button id="saveAppBtn" class="small-btn primary">Save App</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connection Settings Modal -->
+  <div id="connectModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:420px">
+      <div class="modal-header">
+        <h2>Connection Settings</h2>
+        <button class="icon-btn modal-close" onclick="closeConnectModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;opacity:0.7;margin-bottom:12px">
+          Running on Vercel? Enter your local server URL to connect directly.
+        </p>
+        <input type="text" id="localUrlInput" placeholder="http://localhost:8000" class="modal-input">
+        <p style="font-size:12px;opacity:0.5;margin-top:8px">
+          Leave empty to use the hosted backend. Save and refresh to apply.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="small-btn" onclick="closeConnectModal()">Cancel</button>
+        <button id="saveConnectBtn" class="small-btn primary">Save</button>
       </div>
     </div>
   </div>

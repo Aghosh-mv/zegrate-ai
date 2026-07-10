@@ -19,6 +19,8 @@ app.add_middleware(
 )
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+HF_INFERENCE_URL = "https://api-inference.huggingface.co/models/yimn-Aghosh/zegrate-turbo-debugger"
+HF_TOKEN = os.getenv("HF_TOKEN", "")
 ELEVENLABS_KEY = os.getenv("ELEVENLABS_KEY", "sk_b7e22ce5108865f919c24d43435e6b275d90c2abe4ead3b8")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,11 +35,9 @@ apps: List[dict] = []
 todo_id_counter = 0
 app_id_counter = 0
 
-# Virtual model definitions
 VIRTUAL_MODELS = [
-    {"name": "Zegrate AI", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "7B", "quantization_level": "Q4_K_M"}},
+    {"name": "Zegrate AI", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "14B", "quantization_level": "Q4_K_M"}},
     {"name": "Zegrate Turbo Builder", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "1.3B", "quantization_level": "Q4_K_M"}},
-    {"name": "Zegrate Turbo Debugger", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "8B", "quantization_level": "Q4_K_M"}},
 ]
 
 THINK_PROMPT = {
@@ -84,6 +84,24 @@ def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: boo
         return [THINK_PROMPT] + msgs
     return msgs
 
+def parse_thinking(content: str) -> tuple:
+    thinking = ""
+    response = content
+    start = content.find("[THINK]")
+    end = content.find("[/THINK]")
+    if start != -1 and end != -1:
+        thinking = content[start + 7:end].strip()
+        response = (content[:start] + content[end + 8:]).strip()
+    return thinking, response
+
+async def check_ollama() -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"{OLLAMA_HOST}/api/tags")
+            return r.status_code == 200
+    except Exception:
+        return False
+
 @app.get("/")
 async def root():
     idx = os.path.join(STATIC_DIR, "index.html")
@@ -94,16 +112,11 @@ async def root():
 
 @app.get("/api/health")
 async def health():
-    ollama_ok = False
-    try:
-        async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get(f"{OLLAMA_HOST}/api/tags")
-            ollama_ok = r.status_code == 200
-    except Exception:
-        pass
+    ollama_ok = await check_ollama()
     return {
-        "status": "ok" if ollama_ok else "degraded",
+        "status": "ok" if ollama_ok else "cloud",
         "ollama": ollama_ok,
+        "hf_inference": True,
         "mode": "local" if ollama_ok else "cloud",
         "timestamp": datetime.now().isoformat()
     }
@@ -126,51 +139,55 @@ async def list_models():
 async def chat(req: ChatRequest):
     actual_model = map_model(req.model)
     msgs = build_messages_with_reasoning(req.messages, req.show_thinking)
+    ollama_ok = await check_ollama()
 
     if req.stream:
-        return StreamingResponse(
-            stream_chat(actual_model, msgs, req.show_thinking),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            }
-        )
+        if ollama_ok:
+            return StreamingResponse(
+                stream_ollama(actual_model, msgs, req.show_thinking),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+            )
+        else:
+            return StreamingResponse(
+                stream_hf(msgs, req.show_thinking),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+            )
     else:
-        try:
-            async with httpx.AsyncClient(timeout=120) as c:
-                r = await c.post(
-                    f"{OLLAMA_HOST}/api/chat",
-                    json={"model": actual_model, "messages": msgs, "stream": False},
-                    timeout=120,
-                )
-                data = r.json()
-                content = data["message"]["content"]
-                thinking, response_text = parse_thinking(content)
-                return {"message": response_text, "thinking": thinking}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+        if ollama_ok:
+            try:
+                async with httpx.AsyncClient(timeout=120) as c:
+                    r = await c.post(f"{OLLAMA_HOST}/api/chat", json={"model": actual_model, "messages": msgs, "stream": False}, timeout=120)
+                    data = r.json()
+                    content = data["message"]["content"]
+                    thinking, response_text = parse_thinking(content)
+                    return {"message": response_text, "thinking": thinking}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            try:
+                async with httpx.AsyncClient(timeout=120) as c:
+                    r = await c.post(
+                        HF_INFERENCE_URL,
+                        json={"inputs": json.dumps(msgs), "parameters": {"max_new_tokens": 4096, "temperature": 0.7}},
+                        headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
+                        timeout=120,
+                    )
+                    data = r.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        content = data[0].get("generated_text", "")
+                    else:
+                        content = data.get("generated_text", str(data))
+                    thinking, response_text = parse_thinking(content)
+                    return {"message": response_text, "thinking": thinking}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
 
-def parse_thinking(content: str) -> tuple:
-    thinking = ""
-    response = content
-    start = content.find("[THINK]")
-    end = content.find("[/THINK]")
-    if start != -1 and end != -1:
-        thinking = content[start + 7:end].strip()
-        response = (content[:start] + content[end + 8:]).strip()
-    return thinking, response
-
-async def stream_chat(model: str, messages: list, show_thinking: bool = False):
+async def stream_ollama(model: str, messages: list, show_thinking: bool = False):
     try:
         async with httpx.AsyncClient(timeout=300) as c:
-            async with c.stream(
-                "POST",
-                f"{OLLAMA_HOST}/api/chat",
-                json={"model": model, "messages": messages, "stream": True},
-                timeout=300,
-            ) as response:
+            async with c.stream("POST", f"{OLLAMA_HOST}/api/chat", json={"model": model, "messages": messages, "stream": True}, timeout=300) as response:
                 buffer = ""
                 in_thinking = False
                 thinking_buf = ""
@@ -184,7 +201,6 @@ async def stream_chat(model: str, messages: list, show_thinking: bool = False):
                                 if show_thinking:
                                     idx = buffer.find("[THINK]")
                                     if idx != -1 and not in_thinking:
-                                        # yield any content before [THINK]
                                         pre = buffer[:idx]
                                         if pre.strip():
                                             yield f"data: {json.dumps({'content': pre})}\n\n"
@@ -201,20 +217,69 @@ async def stream_chat(model: str, messages: list, show_thinking: bool = False):
                                         else:
                                             thinking_buf += buffer
                                             buffer = ""
-                                    else:
-                                        yield f"data: {json.dumps({'content': buffer})}\n\n"
-                                        buffer = ""
                                 else:
                                     yield f"data: {json.dumps({'content': chunk})}\n\n"
                             if data.get("done"):
-                                if show_thinking and in_thinking:
-                                    thought = buffer
-                                    if thought.strip():
-                                        yield f"data: {json.dumps({'thinking': thinking_buf + thought})}\n\n"
+                                if show_thinking and in_thinking and buffer.strip():
+                                    yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
                                 yield f"data: {json.dumps({'done': True})}\n\n"
                                 return
                         except json.JSONDecodeError:
                             continue
+    except Exception as e:
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
+
+async def stream_hf(messages: list, show_thinking: bool = False):
+    """Stream from HF free Inference API (token-by-token format)"""
+    try:
+        payload = {
+            "inputs": json.dumps(messages),
+            "parameters": {"max_new_tokens": 4096, "temperature": 0.7},
+            "stream": True,
+        }
+        headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
+        buffer = ""
+        in_thinking = False
+        thinking_buf = ""
+        async with httpx.AsyncClient(timeout=300) as c:
+            async with c.stream("POST", HF_INFERENCE_URL, json=payload, headers=headers, timeout=300) as response:
+                async for line in response.aiter_lines():
+                    if line and line.startswith("data:"):
+                        line_data = line[5:].strip()
+                        if not line_data or line_data == "[DONE]":
+                            continue
+                        try:
+                            data = json.loads(line_data)
+                            token = data.get("token", {}).get("text", "")
+                            if token:
+                                buffer += token
+                                if show_thinking:
+                                    idx = buffer.find("[THINK]")
+                                    if idx != -1 and not in_thinking:
+                                        pre = buffer[:idx]
+                                        if pre.strip():
+                                            yield f"data: {json.dumps({'content': pre})}\n\n"
+                                        buffer = buffer[idx + 7:]
+                                        in_thinking = True
+                                        thinking_buf = ""
+                                    if in_thinking:
+                                        end_idx = buffer.find("[/THINK]")
+                                        if end_idx != -1:
+                                            thinking_buf += buffer[:end_idx]
+                                            yield f"data: {json.dumps({'thinking': thinking_buf})}\n\n"
+                                            buffer = buffer[end_idx + 8:]
+                                            in_thinking = False
+                                        else:
+                                            thinking_buf += buffer
+                                            buffer = ""
+                                else:
+                                    yield f"data: {json.dumps({'content': token})}\n\n"
+                        except json.JSONDecodeError:
+                            continue
+        if buffer.strip():
+            yield f"data: {json.dumps({'content': buffer})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
@@ -236,8 +301,7 @@ async def list_conversations(search: Optional[str] = Query(None)):
                 title = content[:60] + ("..." if len(content) > 60 else "")
                 break
         if search:
-            search_lower = search.lower()
-            if search_lower not in title.lower():
+            if search.lower() not in title.lower():
                 continue
         result.append({"id": cid, "title": title, "message_count": len(msgs)})
     result.sort(key=lambda x: x["message_count"], reverse=True)
@@ -268,7 +332,6 @@ async def delete_conversation(conv_id: str):
     conversations.pop(conv_id, None)
     return {"ok": True}
 
-# === TODO ===
 @app.get("/api/todos")
 async def list_todos():
     return {"todos": sorted(todos, key=lambda t: t.get("created_at", ""), reverse=True)}
@@ -277,12 +340,7 @@ async def list_todos():
 async def create_todo(item: TodoItem):
     global todo_id_counter
     todo_id_counter += 1
-    entry = {
-        "id": todo_id_counter,
-        "title": item.title,
-        "completed": item.completed,
-        "created_at": datetime.now().isoformat(),
-    }
+    entry = {"id": todo_id_counter, "title": item.title, "completed": item.completed, "created_at": datetime.now().isoformat()}
     todos.append(entry)
     return entry
 
@@ -301,7 +359,6 @@ async def delete_todo(todo_id: int):
     todos = [t for t in todos if t["id"] != todo_id]
     return {"ok": True}
 
-# === APPS ===
 @app.get("/api/apps")
 async def list_apps(search: Optional[str] = Query(None)):
     result = list(apps)
@@ -314,15 +371,7 @@ async def list_apps(search: Optional[str] = Query(None)):
 async def create_app(item: AppItem):
     global app_id_counter
     app_id_counter += 1
-    entry = {
-        "id": app_id_counter,
-        "name": item.name,
-        "description": item.description,
-        "code": item.code,
-        "category": item.category,
-        "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat(),
-    }
+    entry = {"id": app_id_counter, "name": item.name, "description": item.description, "code": item.code, "category": item.category, "created_at": datetime.now().isoformat(), "updated_at": datetime.now().isoformat()}
     apps.append(entry)
     return entry
 
@@ -344,7 +393,6 @@ async def delete_app(app_id: int):
     apps = [a for a in apps if a["id"] != app_id]
     return {"ok": True}
 
-# === ELEVENLABS TTS ===
 class TTSRequest(BaseModel):
     text: str
     voice_id: str = "21m00Tcm4TlvDq8ikWAM"
@@ -352,25 +400,13 @@ class TTSRequest(BaseModel):
 @app.post("/api/tts")
 async def text_to_speech(req: TTSRequest):
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{req.voice_id}"
-    headers = {
-        "Accept": "audio/mpeg",
-        "Content-Type": "application/json",
-        "xi-api-key": ELEVENLABS_KEY,
-    }
-    data = {
-        "text": req.text,
-        "model_id": "eleven_monolingual_v1",
-        "voice_settings": {"stability": 0.5, "similarity_boost": 0.5},
-    }
+    headers = {"Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": ELEVENLABS_KEY}
+    data = {"text": req.text, "model_id": "eleven_monolingual_v1", "voice_settings": {"stability": 0.5, "similarity_boost": 0.5}}
     try:
         async with httpx.AsyncClient(timeout=30) as c:
             r = await c.post(url, headers=headers, json=data)
             if r.status_code == 200:
-                return StreamingResponse(
-                    iter([r.content]),
-                    media_type="audio/mpeg",
-                    headers={"Content-Disposition": "inline; filename=speech.mp3"},
-                )
+                return StreamingResponse(iter([r.content]), media_type="audio/mpeg", headers={"Content-Disposition": "inline; filename=speech.mp3"})
             else:
                 raise HTTPException(status_code=r.status_code, detail="TTS failed")
     except Exception as e:

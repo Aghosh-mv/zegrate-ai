@@ -936,3 +936,21 @@ body {
   font-size: 12.5px;
   white-space: pre-wrap;
 }
+
+.connect-status {
+  font-size: 11px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--accent);
+}
+.connect-status.connected {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
