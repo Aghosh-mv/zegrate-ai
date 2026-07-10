@@ -55,6 +55,7 @@ FREE_MODELS = [
     "https://api-inference.huggingface.co/models/google/gemma-2-2b-it",
 ]
 
+
 class ChatRequest(BaseModel):
     model: str
     messages: List[Dict[str, str]]
@@ -87,8 +88,8 @@ def map_model(name: str) -> str:
 
 def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False) -> List[Dict[str, str]]:
     if show_thinking:
-        return [THINK_PROMPT, PERSONALITY_PROMPT] + msgs
-    return [PERSONALITY_PROMPT] + msgs
+        return [THINK_PROMPT] + msgs
+    return msgs
 
 def parse_thinking(content: str) -> tuple:
     thinking = ""
