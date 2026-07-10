@@ -758,6 +758,25 @@
   window.closeConnectModal = function() {};
   window.switchProviderTab = function() {};
 
+  async function checkConnection() {
+    try {
+      const res = await fetch(baseURL() + '/api/health');
+      const data = await res.json();
+      if (!data.ollama && !state.localUrl) {
+        try {
+          const localRes = await fetch('http://localhost:8000/api/health');
+          const localData = await localRes.json();
+          if (localData.ollama) {
+            state.localUrl = 'http://localhost:8000';
+            localStorage.setItem('zg-local-url', state.localUrl);
+            loadModels();
+            return;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   /* ============================================================
      TOAST
      ============================================================ */
