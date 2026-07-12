@@ -49,6 +49,13 @@ THINK_PROMPT = {
     )
 }
 
+# Free models available via HuggingFace inference API (no token needed for some)
+FREE_MODELS = [
+    "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct",
+    "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct",
+    "https://api-inference.huggingface.co/models/google/gemma-2-2b-it",
+]
+
 class ChatRequest(BaseModel):
     model: str
     messages: List[Dict[str, str]]
@@ -150,7 +157,7 @@ async def chat(req: ChatRequest):
             )
         else:
             return StreamingResponse(
-                stream_hf(msgs, req.show_thinking),
+                stream_hf_with_fallback(msgs, req.show_thinking),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
             )
@@ -230,59 +237,79 @@ async def stream_ollama(model: str, messages: list, show_thinking: bool = False)
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
 
-async def stream_hf(messages: list, show_thinking: bool = False):
-    """Stream from HF free Inference API (token-by-token format)"""
-    try:
-        payload = {
-            "inputs": json.dumps(messages),
-            "parameters": {"max_new_tokens": 4096, "temperature": 0.7},
-            "stream": True,
-        }
-        headers = {"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"}
-        buffer = ""
-        in_thinking = False
-        thinking_buf = ""
-        async with httpx.AsyncClient(timeout=300) as c:
-            async with c.stream("POST", HF_INFERENCE_URL, json=payload, headers=headers, timeout=300) as response:
-                async for line in response.aiter_lines():
-                    if line and line.startswith("data:"):
-                        line_data = line[5:].strip()
-                        if not line_data or line_data == "[DONE]":
-                            continue
-                        try:
-                            data = json.loads(line_data)
-                            token = data.get("token", {}).get("text", "")
-                            if token:
-                                buffer += token
-                                if show_thinking:
-                                    idx = buffer.find("[THINK]")
-                                    if idx != -1 and not in_thinking:
-                                        pre = buffer[:idx]
-                                        if pre.strip():
-                                            yield f"data: {json.dumps({'content': pre})}\n\n"
-                                        buffer = buffer[idx + 7:]
-                                        in_thinking = True
-                                        thinking_buf = ""
-                                    if in_thinking:
-                                        end_idx = buffer.find("[/THINK]")
-                                        if end_idx != -1:
-                                            thinking_buf += buffer[:end_idx]
-                                            yield f"data: {json.dumps({'thinking': thinking_buf})}\n\n"
-                                            buffer = buffer[end_idx + 8:]
-                                            in_thinking = False
-                                        else:
-                                            thinking_buf += buffer
-                                            buffer = ""
-                                else:
-                                    yield f"data: {json.dumps({'content': token})}\n\n"
-                        except json.JSONDecodeError:
-                            continue
-        if buffer.strip():
-            yield f"data: {json.dumps({'content': buffer})}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
-        yield f"data: {json.dumps({'done': True})}\n\n"
+async def stream_hf_with_fallback(messages: list, show_thinking: bool = False):
+    """Try multiple HuggingFace models as fallback"""
+    urls_to_try = [HF_INFERENCE_URL] + FREE_MODELS
+
+    for url in urls_to_try:
+        try:
+            async for chunk in stream_hf_single(url, messages, show_thinking):
+                yield chunk
+            return  # Success, stop trying
+        except Exception:
+            continue
+
+    # All failed - return error
+    yield f"data: {json.dumps({'error': 'AI service temporarily unavailable. Please try again.'})}\n\n"
+    yield f"data: {json.dumps({'done': True})}\n\n"
+
+async def stream_hf_single(url: str, messages: list, show_thinking: bool = False):
+    """Stream from a single HuggingFace model"""
+    payload = {
+        "inputs": json.dumps(messages),
+        "parameters": {"max_new_tokens": 4096, "temperature": 0.7},
+        "stream": True,
+    }
+    headers = {"Content-Type": "application/json"}
+    if HF_TOKEN:
+        headers["Authorization"] = f"Bearer {HF_TOKEN}"
+
+    buffer = ""
+    in_thinking = False
+    thinking_buf = ""
+
+    async with httpx.AsyncClient(timeout=120) as c:
+        async with c.stream("POST", url, json=payload, headers=headers, timeout=120) as response:
+            if response.status_code != 200:
+                raise Exception(f"HTTP {response.status_code}")
+
+            async for line in response.aiter_lines():
+                if line and line.startswith("data:"):
+                    line_data = line[5:].strip()
+                    if not line_data or line_data == "[DONE]":
+                        continue
+                    try:
+                        data = json.loads(line_data)
+                        token = data.get("token", {}).get("text", "")
+                        if token:
+                            buffer += token
+                            if show_thinking:
+                                idx = buffer.find("[THINK]")
+                                if idx != -1 and not in_thinking:
+                                    pre = buffer[:idx]
+                                    if pre.strip():
+                                        yield f"data: {json.dumps({'content': pre})}\n\n"
+                                    buffer = buffer[idx + 7:]
+                                    in_thinking = True
+                                    thinking_buf = ""
+                                if in_thinking:
+                                    end_idx = buffer.find("[/THINK]")
+                                    if end_idx != -1:
+                                        thinking_buf += buffer[:end_idx]
+                                        yield f"data: {json.dumps({'thinking': thinking_buf})}\n\n"
+                                        buffer = buffer[end_idx + 8:]
+                                        in_thinking = False
+                                    else:
+                                        thinking_buf += buffer
+                                        buffer = ""
+                            else:
+                                yield f"data: {json.dumps({'content': token})}\n\n"
+                    except json.JSONDecodeError:
+                        continue
+
+    if buffer.strip():
+        yield f"data: {json.dumps({'content': buffer})}\n\n"
+    yield f"data: {json.dumps({'done': True})}\n\n"
 
 @app.post("/api/conversations")
 async def create_conversation():
