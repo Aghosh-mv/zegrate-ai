@@ -69,7 +69,7 @@
           <span id="modelStatus" class="model-status idle">Idle</span>
           <span id="connectStatus" class="connect-status" style="display:none"></span>
         </div>
-        <button id="connectBtn" class="icon-btn" title="Connect to local server">&#127760;</button>
+        <button id="connectBtn" class="icon-btn" title="Settings" style="display:none"></button>
         <button id="thinkingToggle" class="icon-btn thinking-toggle" title="Show thinking">&#129504;</button>
         <button id="themeToggle" class="icon-btn" title="Toggle theme">&#9790;</button>
       </header>
@@ -79,7 +79,7 @@
           <div class="welcome-content">
             <div class="welcome-icon">Z</div>
             <h1>Zegrate AI</h1>
-            <p>Choose a model below to start chatting.<br>All data stays on your machine.</p>
+            <p>Choose a model below to start chatting.<br>Works instantly - no setup needed.</p>
             <div class="model-cards" id="modelCards"></div>
           </div>
         </div>
@@ -103,7 +103,7 @@
             </svg>
           </button>
         </div>
-        <div class="input-footer">Your data stays on your machine &middot; Zegrate AI v1.0</div>
+        <div class="input-footer">Works instantly with free AI &middot; Zegrate AI v1.0</div>
       </div>
     </main>
   </div>
@@ -134,28 +134,7 @@
     </div>
   </div>
 
-  <!-- Connection Settings Modal -->
-  <div id="connectModal" class="modal" style="display:none">
-    <div class="modal-content" style="max-width:420px">
-      <div class="modal-header">
-        <h2>Connection Settings</h2>
-        <button class="icon-btn modal-close" onclick="closeConnectModal()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p style="font-size:13px;opacity:0.7;margin-bottom:12px">
-          Running on Vercel? Enter your local server URL to connect directly.
-        </p>
-        <input type="text" id="localUrlInput" placeholder="http://localhost:8000" class="modal-input">
-        <p style="font-size:12px;opacity:0.5;margin-top:8px">
-          Leave empty to use the hosted backend. Save and refresh to apply.
-        </p>
-      </div>
-      <div class="modal-footer">
-        <button class="small-btn" onclick="closeConnectModal()">Cancel</button>
-        <button id="saveConnectBtn" class="small-btn primary">Save</button>
-      </div>
-    </div>
-  </div>
+  <!-- No connection settings needed - it just works -->
 
   <script src="/static/js/chat.js"></script>
 </body>
