@@ -11,21 +11,21 @@
     }
   ],
   "routes": [
-    { "src": "/static/(.*)", "dest": "/static/$1" },
     { "src": "/api/(.*)", "dest": "api/index.py" },
-    { "src": "/(.*)", "dest": "api/index.py" }
+    { "src": "/static/(.*)", "dest": "/static/$1" },
+    { "src": "/", "dest": "/static/index.html" }
   ],
   "headers": [
     {
       "source": "/static/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     },
     {
-      "source": "/(.*)",
+      "source": "/",
       "headers": [
-        { "key": "Cache-Control", "value": "no-cache" }
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
     }
   ],

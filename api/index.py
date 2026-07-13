@@ -19,7 +19,6 @@ app.add_middleware(
 )
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-HF_INFERENCE_URL = "https://api-inference.huggingface.co/models/yimn-Aghosh/zegrate-turbo-debugger"
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 ELEVENLABS_KEY = os.getenv("ELEVENLABS_KEY", "sk_b7e22ce5108865f919c24d43435e6b275d90c2abe4ead3b8")
 
@@ -176,7 +175,7 @@ async def chat(req: ChatRequest):
             try:
                 async with httpx.AsyncClient(timeout=120) as c:
                     r = await c.post(
-                        HF_INFERENCE_URL,
+                        FREE_MODELS[0],
                         json={"inputs": json.dumps(msgs), "parameters": {"max_new_tokens": 4096, "temperature": 0.7}},
                         headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
                         timeout=120,
@@ -239,7 +238,7 @@ async def stream_ollama(model: str, messages: list, show_thinking: bool = False)
 
 async def stream_hf_with_fallback(messages: list, show_thinking: bool = False):
     """Try multiple HuggingFace models as fallback"""
-    urls_to_try = [HF_INFERENCE_URL] + FREE_MODELS
+    urls_to_try = list(FREE_MODELS)
 
     for url in urls_to_try:
         try:

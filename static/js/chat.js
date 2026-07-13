@@ -678,7 +678,7 @@
 
   async function speakText(text) {
     try {
-      const res = await fetch(baseURL() + '/api/tts', {
+      const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.substring(0, 500) }),
