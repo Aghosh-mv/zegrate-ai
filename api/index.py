@@ -37,6 +37,7 @@ app_id_counter = 0
 VIRTUAL_MODELS = [
     {"name": "Zegrate AI", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "14B", "quantization_level": "Q4_K_M"}},
     {"name": "Zegrate Turbo Builder", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "1.3B", "quantization_level": "Q4_K_M"}},
+    {"name": "Zegrate LangSec", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "14B", "quantization_level": "Q4_K_M"}},
 ]
 
 THINK_PROMPT = {
@@ -76,6 +77,8 @@ class AppItem(BaseModel):
     category: str = "general"
 
 def map_model(name: str) -> str:
+    if "langsec" in name.lower() or "lang" in name.lower():
+        return "zegrate-langsec:latest"
     if "debugger" in name.lower():
         return "zegrate-turbo-debugger:latest"
     if "builder" in name.lower():

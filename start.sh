@@ -1,29 +1,22 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+# Ensure server + tunnel stay running
 
-echo "=========================================="
-echo "  Zegrate AI - Startup Script"
-echo "=========================================="
-
-# Kill any existing server
-pkill -f "uvicorn api.index:app" 2>/dev/null || true
+# Kill any stale processes
+pkill -f "uvicorn.*api.index" 2>/dev/null
+pkill -f cloudflared 2>/dev/null
 sleep 1
 
-# Start the FastAPI server
-cd "$(dirname "$0")"
-nohup python3.10 -m uvicorn api.index:app --host 0.0.0.0 --port 8000 --reload > server.log 2>&1 &
+# Start server
+cd /home/tinkerspace/zegrate-ai
+nohup ~/.local/bin/uvicorn api.index:app --host 0.0.0.0 --port 8000 > /tmp/server.log 2>&1 &
 echo "Server PID: $!"
-sleep 2
 
-# Verify
-if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
-    echo "✓ Server running at http://localhost:8000"
-    echo "✓ Ollama: $(curl -s http://localhost:8000/api/health | python3.10 -c 'import sys,json; print(json.load(sys.stdin)[\"status\"])')"
-else
-    echo "✗ Server failed to start. Check server.log"
-    exit 1
-fi
+# Start tunnel
+nohup /tmp/cloudflared tunnel --url http://localhost:8000 > /tmp/tunnel.log 2>&1 &
+sleep 4
+TUNNEL_URL=$(grep -oP 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/tunnel.log | tail -1)
+echo "Tunnel: $TUNNEL_URL"
 
-echo ""
-echo "  Open http://localhost:8000 in your browser"
-echo ""
+# Start auto-deploy watcher (runs in background)
+nohup bash /home/tinkerspace/zegrate-ai/auto_deploy.sh &
+echo "Auto-deploy watcher started"
