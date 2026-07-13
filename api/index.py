@@ -57,6 +57,20 @@ FREE_MODELS = [
 ]
 
 
+def format_messages_for_hf(msgs: List[Dict[str, str]]) -> str:
+    prompt = ""
+    for m in msgs:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "system":
+            prompt += f"{content}\n"
+        elif role == "user":
+            prompt += f"User: {content}\n"
+        elif role == "assistant":
+            prompt += f"Assistant: {content}\n"
+    prompt += "Assistant: "
+    return prompt
+
 class ChatRequest(BaseModel):
     model: str
     messages: List[Dict[str, str]]
@@ -188,11 +202,12 @@ async def chat(req: ChatRequest):
                 raise HTTPException(status_code=500, detail=str(e))
         else:
             try:
+                prompt = format_messages_for_hf(msgs)
                 async with httpx.AsyncClient(timeout=120) as c:
                     r = await c.post(
                         FREE_MODELS[0],
-                        json={"inputs": json.dumps(msgs), "parameters": {"max_new_tokens": 4096, "temperature": 0.7}},
-                        headers={"Authorization": f"Bearer {HF_TOKEN}", "Content-Type": "application/json"},
+                        json={"inputs": prompt, "parameters": {"max_new_tokens": 4096, "temperature": 0.7}},
+                        headers={**({"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}), "Content-Type": "application/json"},
                         timeout=120,
                     )
                     data = r.json()
@@ -269,8 +284,9 @@ async def stream_hf_with_fallback(messages: list, show_thinking: bool = False):
 
 async def stream_hf_single(url: str, messages: list, show_thinking: bool = False):
     """Stream from a single HuggingFace model"""
+    prompt = format_messages_for_hf(messages)
     payload = {
-        "inputs": json.dumps(messages),
+        "inputs": prompt,
         "parameters": {"max_new_tokens": 4096, "temperature": 0.7},
         "stream": True,
     }
