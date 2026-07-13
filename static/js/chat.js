@@ -753,10 +753,36 @@
   }
 
   /* ============================================================
-     CONNECTION (hidden - app just works)
+     CONNECTION
      ============================================================ */
-  window.closeConnectModal = function() {};
-  window.switchProviderTab = function() {};
+  window.closeConnectModal = function() {
+    document.getElementById('connectModal').style.display = 'none';
+  };
+
+  function openConnectModal() {
+    document.getElementById('localUrlInput').value = state.localUrl;
+    document.getElementById('connectModal').style.display = 'flex';
+  }
+
+  function saveConnection() {
+    const url = document.getElementById('localUrlInput').value.trim();
+    state.localUrl = url;
+    localStorage.setItem('zg-local-url', url);
+    document.getElementById('connectModal').style.display = 'none';
+    updateConnectStatus();
+    toast(url ? 'Connected!' : 'Using cloud backend');
+    if (url) loadModels();
+  }
+
+  function updateConnectStatus() {
+    if (state.localUrl) {
+      el.connectStatus.textContent = '\u26A1 Local';
+      el.connectStatus.style.display = 'inline';
+      el.connectStatus.className = 'connect-status connected';
+    } else {
+      el.connectStatus.style.display = 'none';
+    }
+  }
 
   async function checkConnection() {
     try {
@@ -769,10 +795,15 @@
           if (localData.ollama) {
             state.localUrl = 'http://localhost:8000';
             localStorage.setItem('zg-local-url', state.localUrl);
+            updateConnectStatus();
             loadModels();
             return;
           }
         } catch (_) {}
+        el.connectBtn.style.display = '';
+        el.connectBtn.title = 'Offline - click to connect to local Ollama';
+      } else {
+        el.connectBtn.style.display = '';
       }
     } catch (_) {}
   }
@@ -829,6 +860,13 @@
     });
     el.themeToggle.addEventListener('click', toggleTheme);
     el.thinkingToggle.addEventListener('click', toggleThinking);
+
+    // Connection
+    el.connectBtn.addEventListener('click', openConnectModal);
+    document.getElementById('saveConnectBtn').addEventListener('click', saveConnection);
+    document.getElementById('connectModal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('connectModal')) closeConnectModal();
+    });
 
     // Todo
     el.addTodoBtn.addEventListener('click', addTodo);

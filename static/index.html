@@ -69,7 +69,7 @@
           <span id="modelStatus" class="model-status idle">Idle</span>
           <span id="connectStatus" class="connect-status" style="display:none"></span>
         </div>
-        <button id="connectBtn" class="icon-btn" title="Settings" style="display:none"></button>
+        <button id="connectBtn" class="icon-btn" title="Connect to local server">&#127760;</button>
         <button id="thinkingToggle" class="icon-btn thinking-toggle" title="Show thinking">&#129504;</button>
         <button id="themeToggle" class="icon-btn" title="Toggle theme">&#9790;</button>
       </header>
@@ -134,7 +134,28 @@
     </div>
   </div>
 
-  <!-- No connection settings needed - it just works -->
+  <!-- Connection Settings Modal -->
+  <div id="connectModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:420px">
+      <div class="modal-header">
+        <h2>Connect to Local Server</h2>
+        <button class="icon-btn modal-close" onclick="closeConnectModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;opacity:0.7;margin-bottom:12px">
+          Running on Vercel? Paste your tunnel URL to connect to your local Ollama.
+        </p>
+        <input type="text" id="localUrlInput" placeholder="https://your-tunnel.trycloudflare.com" class="modal-input">
+        <p style="font-size:12px;opacity:0.5;margin-top:8px">
+          Leave empty to use the cloud backend. URL is saved in your browser.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="small-btn" onclick="closeConnectModal()">Cancel</button>
+        <button id="saveConnectBtn" class="small-btn primary">Save</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/js/chat.js?v=3"></script>
 </body>
