@@ -13,21 +13,7 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.py" },
     { "src": "/static/(.*)", "dest": "/static/$1" },
-    { "src": "/", "dest": "/static/index.html" }
-  ],
-  "headers": [
-    {
-      "source": "/static/(.*)",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
-      ]
-    },
-    {
-      "source": "/",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
-      ]
-    }
+    { "src": "/(.*)", "dest": "/static/index.html" }
   ],
   "functions": {
     "api/index.py": {

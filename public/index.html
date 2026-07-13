@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zegrate AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css?v=3">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">Z</div>
+          <span>Zegrate AI</span>
+        </div>
+        <button id="newChatBtn" class="new-chat-btn">+ New Chat</button>
+      </div>
+
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="chats">Chats</button>
+        <button class="sidebar-tab" data-tab="apps">Apps</button>
+        <button class="sidebar-tab" data-tab="todo">Todo</button>
+      </div>
+
+      <div id="sidebarContent" class="sidebar-content">
+        <div class="tab-panel active" id="panel-chats">
+          <div class="search-bar">
+            <input type="text" id="chatSearch" placeholder="Search conversations..." autocomplete="off">
+          </div>
+          <div id="conversationList" class="conversation-list"></div>
+        </div>
+
+        <div class="tab-panel" id="panel-apps">
+          <div class="panel-header-row">
+            <button id="newAppBtn" class="small-btn">+ New App</button>
+          </div>
+          <div class="search-bar">
+            <input type="text" id="appSearch" placeholder="Search apps..." autocomplete="off">
+          </div>
+          <div id="appList" class="app-list"></div>
+        </div>
+
+        <div class="tab-panel" id="panel-todo">
+          <div class="panel-header-row">
+            <span class="panel-title">Tasks</span>
+          </div>
+          <div class="todo-input-row">
+            <input type="text" id="todoInput" placeholder="Add a task..." autocomplete="off">
+            <button id="addTodoBtn" class="small-btn">Add</button>
+          </div>
+          <div id="todoList" class="todo-list"></div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <select id="modelSelect" class="model-select"></select>
+      </div>
+    </aside>
+
+    <main id="mainArea" class="main-area">
+      <header class="main-header">
+        <button id="sidebarToggle" class="icon-btn sidebar-toggle" title="Toggle sidebar">&#9776;</button>
+        <div class="header-info">
+          <span id="currentModelName" class="model-name">Select a model</span>
+          <span id="modelStatus" class="model-status idle">Idle</span>
+          <span id="connectStatus" class="connect-status" style="display:none"></span>
+        </div>
+        <button id="connectBtn" class="icon-btn" title="Settings" style="display:none"></button>
+        <button id="thinkingToggle" class="icon-btn thinking-toggle" title="Show thinking">&#129504;</button>
+        <button id="themeToggle" class="icon-btn" title="Toggle theme">&#9790;</button>
+      </header>
+
+      <div id="chatContainer" class="chat-container">
+        <div id="welcomeScreen" class="welcome-screen">
+          <div class="welcome-content">
+            <div class="welcome-icon">Z</div>
+            <h1>Zegrate AI</h1>
+            <p>Choose a model below to start chatting.<br>Works instantly - no setup needed.</p>
+            <div class="model-cards" id="modelCards"></div>
+          </div>
+        </div>
+        <div id="chatMessages" class="chat-messages" style="display:none"></div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea id="messageInput" placeholder="Send a message..." rows="1" disabled></textarea>
+          <button id="voiceBtn" class="voice-btn" title="Voice input" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </button>
+          <button id="sendBtn" class="send-btn" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="input-footer">Works instantly with free AI &middot; Zegrate AI v1.0</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- App Editor Modal -->
+  <div id="appModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="appModalTitle">New App</h2>
+        <button class="icon-btn modal-close" onclick="closeAppModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="appNameInput" placeholder="App name" class="modal-input">
+        <input type="text" id="appDescInput" placeholder="Short description" class="modal-input">
+        <select id="appCategoryInput" class="modal-input">
+          <option value="web">Web App</option>
+          <option value="cli">CLI Tool</option>
+          <option value="api">API</option>
+          <option value="game">Game</option>
+          <option value="other">Other</option>
+        </select>
+        <textarea id="appCodeInput" placeholder="Paste your code here..." class="modal-textarea" rows="12"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="small-btn" onclick="closeAppModal()">Cancel</button>
+        <button id="saveAppBtn" class="small-btn primary">Save App</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- No connection settings needed - it just works -->
+
+  <script src="/static/js/chat.js?v=3"></script>
+</body>
+</html>

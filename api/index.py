@@ -113,7 +113,14 @@ async def root():
     idx = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(idx):
         with open(idx) as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(
+                f.read(),
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                }
+            )
     return HTMLResponse("<h1>Zegrate AI</h1><p>Frontend not found</p>")
 
 @app.get("/api/health")
