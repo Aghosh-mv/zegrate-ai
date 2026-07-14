@@ -21,6 +21,8 @@
     usingLocal: false,
   };
 
+  const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
+
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
   const el = {};
@@ -855,11 +857,7 @@
   }
 
   function setup() {
-    const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
-
-  // ... setup code ...
-
-  cacheEls();
+    cacheEls();
     loadTheme();
     initThinking();
     setupSidebarTabs();
