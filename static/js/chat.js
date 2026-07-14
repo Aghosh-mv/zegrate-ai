@@ -788,7 +788,8 @@
 
   async function checkConnection() {
     try {
-      const res = await fetch(baseURL() + '/api/health');
+      const apiUrl = state.localUrl || '';
+      const res = await fetch(apiUrl + '/api/health');
       const data = await res.json();
       if (!data.ollama && !state.localUrl) {
         // Try localhost first

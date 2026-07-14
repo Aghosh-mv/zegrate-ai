@@ -127,8 +127,43 @@ async def check_ollama() -> bool:
     except Exception:
         return False
 
+TUNNEL_GIST = "https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt"
+
+REDIRECT_PAGE = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Zegrate AI</title>
+<style>
+body{margin:0;background:#0a0a0f;color:#e0e0e0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui,sans-serif;}
+.box{text-align:center;max-width:400px;padding:2rem;}
+.spinner{width:40px;height:40px;margin:0 auto 1rem;border:4px solid #222;border-top:4px solid #a855f7;border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+p{color:#888;font-size:14px;line-height:1.5}
+a{color:#a855f7;text-decoration:none}
+</style></head><body>
+<div class="box">
+<div class="spinner"></div>
+<h1>Zegrate AI</h1>
+<p>Connecting to your private AI instance...</p>
+</div>
+<script>
+(async function(){{
+  try {{
+    const r = await fetch('""" + TUNNEL_GIST + """');
+    const url = (await r.text()).trim();
+    if (url) {{
+      localStorage.setItem('zg-tunnel-url', url);
+      window.location.href = url;
+    }}
+  }} catch(e) {{}}
+  document.querySelector('.box').innerHTML = '<h1>Zegrate AI</h1><p>AI instance offline.<br>Start the server and <a href="https://zegrate-ai.vercel.app">try again</a>.</p>';
+}})();
+</script></body></html>"""
+
+ON_VERCEL = os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("VERCEL_ENV")
+
 @app.get("/")
 async def root():
+    if ON_VERCEL:
+        return HTMLResponse(REDIRECT_PAGE, headers={"Cache-Control": "no-store"})
     idx = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(idx):
         with open(idx) as f:
