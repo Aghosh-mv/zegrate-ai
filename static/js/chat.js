@@ -17,6 +17,8 @@
     mediaRecorder: null,
     audioChunks: [],
     showThinking: localStorage.getItem('zg-thinking') === 'true',
+    localUrl: localStorage.getItem('zg-local-url') || '',
+    usingLocal: false,
   };
 
   const $ = (s) => document.querySelector(s);
@@ -789,6 +791,7 @@
       const res = await fetch(baseURL() + '/api/health');
       const data = await res.json();
       if (!data.ollama && !state.localUrl) {
+        // Try localhost first
         try {
           const localRes = await fetch('http://localhost:8000/api/health');
           const localData = await localRes.json();
@@ -800,10 +803,27 @@
             return;
           }
         } catch (_) {}
-        el.connectBtn.style.display = '';
+
+        // Try tunnel URL from GitHub Gist
+        try {
+          const gistRes = await fetch(TUNNEL_GIST);
+          const tunnelUrl = (await gistRes.text()).trim();
+          if (tunnelUrl) {
+            const tunnelRes = await fetch(tunnelUrl + '/api/health');
+            const tunnelData = await tunnelRes.json();
+            if (tunnelData.ollama) {
+              state.localUrl = tunnelUrl;
+              localStorage.setItem('zg-local-url', state.localUrl);
+              updateConnectStatus();
+              loadModels();
+              return;
+            }
+          }
+        } catch (_) {}
+
         el.connectBtn.title = 'Offline - click to connect to local Ollama';
       } else {
-        el.connectBtn.style.display = '';
+        el.connectBtn.title = 'Connected to Ollama';
       }
     } catch (_) {}
   }
@@ -834,7 +854,11 @@
   }
 
   function setup() {
-    cacheEls();
+    const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
+
+  // ... setup code ...
+
+  cacheEls();
     loadTheme();
     initThinking();
     setupSidebarTabs();

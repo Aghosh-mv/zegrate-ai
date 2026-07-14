@@ -51,9 +51,10 @@ THINK_PROMPT = {
 
 # Free models available via HuggingFace inference API (no token needed for some)
 FREE_MODELS = [
-    "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct",
-    "https://api-inference.huggingface.co/models/microsoft/Phi-3-mini-4k-instruct",
-    "https://api-inference.huggingface.co/models/google/gemma-2-2b-it",
+    "https://router.huggingface.co/hf-inference/models/yimn-Aghosh/zegrate-turbo-debugger",
+    "https://router.huggingface.co/hf-inference/models/Qwen/Qwen2.5-7B-Instruct",
+    "https://router.huggingface.co/hf-inference/models/microsoft/Phi-3-mini-4k-instruct",
+    "https://router.huggingface.co/hf-inference/models/google/gemma-2-2b-it",
 ]
 
 
