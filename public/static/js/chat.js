@@ -17,6 +17,8 @@
     mediaRecorder: null,
     audioChunks: [],
     showThinking: localStorage.getItem('zg-thinking') === 'true',
+    localUrl: localStorage.getItem('zg-local-url') || '',
+    usingLocal: false,
   };
 
   const $ = (s) => document.querySelector(s);
@@ -56,13 +58,24 @@
     el.saveAppBtn         = $('#saveAppBtn');
     el.voiceBtn           = $('#voiceBtn');
     el.thinkingToggle     = $('#thinkingToggle');
+    el.connectBtn         = $('#connectBtn');
+    el.connectStatus      = $('#connectStatus');
   }
 
   /* ============================================================
      API
      ============================================================ */
+  function apiBase() {
+    // On Vercel, route through tunnel. On localhost, use same origin.
+    if (state.localUrl && !window.location.hostname.includes('localhost')) {
+      return state.localUrl;
+    }
+    return '';
+  }
+
   async function api(path, opts = {}) {
-    const res = await fetch(path, {
+    const url = apiBase() + path;
+    const res = await fetch(url, {
       headers: { 'Content-Type': 'application/json', ...opts.headers },
       ...opts,
     });
@@ -89,7 +102,9 @@
     renderModelSelect();
     renderModelCards();
     if (state.models.length && (!state.selectedModel || !state.models.some(m => m.name === state.selectedModel))) {
-      const preferred = state.models.find(m => /zegrate/i.test(m.name));
+      const preferred = state.models.find(m => /zegrate.*langsec/i.test(m.name))
+        || state.models.find(m => /zegrate.*turbo.*builder/i.test(m.name))
+        || state.models.find(m => /zegrate/i.test(m.name));
       state.selectedModel = preferred ? preferred.name : state.models[0].name;
     }
     el.modelSelect.value = state.selectedModel;
@@ -120,6 +135,10 @@
     return '\u2728';
   }
 
+  function isZegrateModel(m) {
+    return /zegrate/i.test(m.name) || (m.details && m.details.family === 'zegrate');
+  }
+
   function renderModelSelect() {
     el.modelSelect.innerHTML = '<option value="">\u2014 Select model \u2014</option>';
     state.models.forEach((m) => {
@@ -127,7 +146,7 @@
       opt.value = m.name;
       const suffix = m.size ? '  (' + formatSize(m.size) + ')' : '';
       opt.textContent = displayName(m.name) + suffix;
-      if (/zegrate/i.test(m.name)) opt.style.fontWeight = '600';
+      if (isZegrateModel(m)) opt.style.fontWeight = '600';
       el.modelSelect.appendChild(opt);
     });
     el.modelSelect.value = state.selectedModel;
@@ -135,7 +154,7 @@
 
   function renderModelCards() {
     el.modelCards.innerHTML = '';
-    const show = state.models.slice(0, 6);
+    const show = state.models.filter(isZegrateModel).slice(0, 6);
     show.forEach((m) => {
       const card = document.createElement('div');
       card.className = 'model-card';
@@ -312,7 +331,8 @@
 
   function formatContent(text) {
     if (!text) return '';
-    let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    let html = text.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+    html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
       const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       return '<pre><code' + (lang ? ' class="lang-' + lang + '"' : '') + '>' + escaped + '</code></pre>';
@@ -356,7 +376,7 @@
 
     const messagesForAPI = state.messages.map((m) => ({ role: m.role, content: m.content }));
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking }),
@@ -464,8 +484,8 @@
   async function saveMessages(msgs) {
     if (!state.currentConvId) return;
     try {
-      await fetch('/api/conversations/' + state.currentConvId + '/messages', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: msgs }),
+      await api('/api/conversations/' + state.currentConvId + '/messages', {
+        method: 'POST', body: JSON.stringify({ messages: msgs }),
       });
     } catch (_) {}
   }
@@ -678,9 +698,8 @@
 
   async function speakText(text) {
     try {
-      const res = await fetch('/api/tts', {
+      const res = await api('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.substring(0, 500) }),
       });
       if (!res.ok) throw new Error('TTS failed');
@@ -746,10 +765,104 @@
   }
 
   /* ============================================================
-     CONNECTION (hidden - app just works)
+     CONNECTION
      ============================================================ */
-  window.closeConnectModal = function() {};
-  window.switchProviderTab = function() {};
+  window.closeConnectModal = function() {
+    document.getElementById('connectModal').style.display = 'none';
+  };
+
+  function openConnectModal() {
+    document.getElementById('localUrlInput').value = state.localUrl;
+    document.getElementById('connectModal').style.display = 'flex';
+  }
+
+  function saveConnection() {
+    const url = document.getElementById('localUrlInput').value.trim();
+    state.localUrl = url;
+    localStorage.setItem('zg-local-url', url);
+    document.getElementById('connectModal').style.display = 'none';
+    updateConnectStatus();
+    toast(url ? 'Connected!' : 'Using cloud backend');
+    if (url) loadModels();
+  }
+
+  function updateConnectStatus() {
+    if (state.localUrl) {
+      el.connectStatus.textContent = '\u26A1 Local';
+      el.connectStatus.style.display = 'inline';
+      el.connectStatus.className = 'connect-status connected';
+    } else {
+      el.connectStatus.style.display = 'none';
+    }
+  }
+
+  async function checkConnection() {
+    // 1. Try Vercel health endpoint (discovers tunnel automatically)
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      if (data.tunnel_url && data.llamacpp) {
+        state.localUrl = data.tunnel_url;
+        localStorage.setItem('zg-local-url', state.localUrl);
+        updateConnectStatus();
+        loadModels();
+        return;
+      }
+      if (data.ollama || data.llamacpp) {
+        el.connectBtn.title = 'Connected';
+        return;
+      }
+    } catch (_) {}
+
+    // 2. Try saved tunnel URL (fast path, may be stale)
+    if (state.localUrl) {
+      try {
+        const res = await fetch(state.localUrl + '/api/health');
+        const data = await res.json();
+        if (data.ollama || data.llamacpp) {
+          updateConnectStatus();
+          loadModels();
+          return;
+        }
+      } catch (_) {
+        state.localUrl = '';
+        localStorage.removeItem('zg-local-url');
+        updateConnectStatus();
+      }
+    }
+
+    // 3. Try localhost (development)
+    try {
+      const localRes = await fetch('http://localhost:8000/api/health');
+      const localData = await localRes.json();
+      if (localData.ollama || localData.llamacpp) {
+        state.localUrl = 'http://localhost:8000';
+        localStorage.setItem('zg-local-url', state.localUrl);
+        updateConnectStatus();
+        loadModels();
+        return;
+      }
+    } catch (_) {}
+
+    // 4. Try tunnel URL from GitHub Gist
+    try {
+      const gistRes = await fetch(TUNNEL_GIST);
+      const tunnelUrl = (await gistRes.text()).trim();
+      if (tunnelUrl) {
+        const tunnelRes = await fetch(tunnelUrl + '/api/health');
+        const tunnelData = await tunnelRes.json();
+        if (tunnelData.ollama || tunnelData.llamacpp) {
+          state.localUrl = tunnelUrl;
+          localStorage.setItem('zg-local-url', state.localUrl);
+          updateConnectStatus();
+          loadModels();
+          return;
+        }
+      }
+    } catch (_) {}
+
+    el.connectBtn.title = 'Offline - click to connect to local server';
+  }
 
   /* ============================================================
      TOAST
@@ -775,6 +888,8 @@
       el.thinkingToggle.title = 'Hide thinking';
     }
   }
+
+  const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
 
   function setup() {
     cacheEls();
@@ -803,6 +918,13 @@
     });
     el.themeToggle.addEventListener('click', toggleTheme);
     el.thinkingToggle.addEventListener('click', toggleThinking);
+
+    // Connection
+    el.connectBtn.addEventListener('click', openConnectModal);
+    document.getElementById('saveConnectBtn').addEventListener('click', saveConnection);
+    document.getElementById('connectModal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('connectModal')) closeConnectModal();
+    });
 
     // Todo
     el.addTodoBtn.addEventListener('click', addTodo);
@@ -846,6 +968,7 @@
      ============================================================ */
   async function init() {
     setup();
+    await checkConnection();
     await loadModels();
     await loadConversations();
     await loadTodos();

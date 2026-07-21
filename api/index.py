@@ -19,8 +19,11 @@ app.add_middleware(
 )
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+LLAMA_CPP_HOST = os.getenv("LLAMA_CPP_HOST", "http://localhost:8001")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 ELEVENLABS_KEY = os.getenv("ELEVENLABS_KEY", "sk_b7e22ce5108865f919c24d43435e6b275d90c2abe4ead3b8")
+ON_VERCEL = os.getenv("VERCEL", "0") == "1"
+TUNNEL_GIST = "https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt"
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -36,8 +39,6 @@ app_id_counter = 0
 
 VIRTUAL_MODELS = [
     {"name": "Zegrate AI", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "14B", "quantization_level": "Q4_K_M"}},
-    {"name": "Zegrate Turbo Builder", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "1.3B", "quantization_level": "Q4_K_M"}},
-    {"name": "Zegrate LangSec", "size": 0, "digest": "virtual", "details": {"family": "zegrate", "parameter_size": "14B", "quantization_level": "Q4_K_M"}},
 ]
 
 THINK_PROMPT = {
@@ -92,16 +93,8 @@ class AppItem(BaseModel):
     category: str = "general"
 
 def map_model(name: str) -> str:
-    if "langsec" in name.lower() or "lang" in name.lower():
-        return "zegrate-langsec:latest"
-    if "debugger" in name.lower():
-        return "zegrate-turbo-debugger:latest"
-    if "builder" in name.lower():
-        return "zegrate-turbo-builder:latest"
-    if "turbo" in name.lower():
-        return "qwen3.5:27b"
     if "zegrate" in name.lower():
-        return "zegrate-turbo-builder:latest"
+        return "qwen2.5-14b-instruct"
     return name
 
 def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False) -> List[Dict[str, str]]:
@@ -127,6 +120,46 @@ async def check_ollama() -> bool:
     except Exception:
         return False
 
+async def check_llamacpp() -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"{LLAMA_CPP_HOST}/health")
+            return r.status_code == 200
+    except Exception:
+        return False
+
+async def get_tunnel_url() -> Optional[str]:
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.get(TUNNEL_GIST)
+            if r.status_code == 200:
+                url = r.text.strip()
+                if url:
+                    return url
+    except Exception:
+        pass
+    return None
+
+def get_backend_url() -> str:
+    return LLAMA_CPP_HOST
+
+async def resolve_llamacpp_url() -> Optional[str]:
+    if await check_llamacpp():
+        return LLAMA_CPP_HOST
+    if ON_VERCEL:
+        tunnel_url = await get_tunnel_url()
+        if tunnel_url:
+            try:
+                async with httpx.AsyncClient(timeout=3) as c:
+                    r = await c.get(f"{tunnel_url}/api/health")
+                    if r.status_code == 200:
+                        data = r.json()
+                        if data.get("llamacpp") or data.get("ollama"):
+                            return tunnel_url
+            except Exception:
+                pass
+    return None
+
 @app.get("/")
 async def root():
     idx = os.path.join(STATIC_DIR, "index.html")
@@ -145,11 +178,17 @@ async def root():
 @app.get("/api/health")
 async def health():
     ollama_ok = await check_ollama()
+    llamacpp_url = await resolve_llamacpp_url()
+    llamacpp_ok = llamacpp_url is not None
+    backend = "llamacpp" if llamacpp_ok else "ollama" if ollama_ok else "none"
     return {
-        "status": "ok" if ollama_ok else "cloud",
+        "status": "ok" if (ollama_ok or llamacpp_ok) else "cloud",
         "ollama": ollama_ok,
+        "llamacpp": llamacpp_ok,
         "hf_inference": True,
-        "mode": "local" if ollama_ok else "cloud",
+        "mode": "local" if (ollama_ok or llamacpp_ok) else "cloud",
+        "backend": backend,
+        "tunnel_url": llamacpp_url if ON_VERCEL else None,
         "timestamp": datetime.now().isoformat()
     }
 
@@ -159,26 +198,56 @@ async def model_redirect():
 
 @app.get("/api/models")
 async def list_models():
-    try:
-        async with httpx.AsyncClient(timeout=5) as c:
-            r = await c.get(f"{OLLAMA_HOST}/api/tags")
-            if r.status_code == 200:
-                data = r.json()
-                models = data.get("models", [])
-                models.sort(key=lambda m: m.get("size", 0), reverse=True)
-                return {"models": VIRTUAL_MODELS + models, "virtual": [m["name"] for m in VIRTUAL_MODELS]}
-    except Exception:
-        pass
-    return {"models": VIRTUAL_MODELS, "virtual": [m["name"] for m in VIRTUAL_MODELS]}
+    ollama_ok = await check_ollama()
+    llamacpp_url = await resolve_llamacpp_url()
+    llamacpp_ok = llamacpp_url is not None
+    models = list(VIRTUAL_MODELS)
+
+    if llamacpp_ok:
+        try:
+            async with httpx.AsyncClient(timeout=5) as c:
+                r = await c.get(f"{llamacpp_url}/v1/models")
+                if r.status_code == 200:
+                    data = r.json()
+                    for m in data.get("data", []):
+                        models.append({
+                            "name": m.get("id", "qwen2.5-14b-instruct"),
+                            "size": 0,
+                            "digest": "llamacpp",
+                            "details": {"family": "zegrate", "parameter_size": "14B", "quantization_level": "Q4_K_M"}
+                        })
+        except Exception:
+            pass
+
+    if ollama_ok:
+        try:
+            async with httpx.AsyncClient(timeout=5) as c:
+                r = await c.get(f"{OLLAMA_HOST}/api/tags")
+                if r.status_code == 200:
+                    data = r.json()
+                    for m in data.get("models", []):
+                        models.append(m)
+        except Exception:
+            pass
+
+    return {"models": models, "virtual": [m["name"] for m in VIRTUAL_MODELS]}
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     actual_model = map_model(req.model)
     msgs = build_messages_with_reasoning(req.messages, req.show_thinking)
     ollama_ok = await check_ollama()
+    llamacpp_url = await resolve_llamacpp_url()
+    llamacpp_ok = llamacpp_url is not None
 
     if req.stream:
-        if ollama_ok:
+        if llamacpp_ok:
+            return StreamingResponse(
+                stream_llamacpp(actual_model, msgs, req.show_thinking, llamacpp_url),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+            )
+        elif ollama_ok:
             return StreamingResponse(
                 stream_ollama(actual_model, msgs, req.show_thinking),
                 media_type="text/event-stream",
@@ -191,7 +260,19 @@ async def chat(req: ChatRequest):
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
             )
     else:
-        if ollama_ok:
+        if llamacpp_ok:
+            try:
+                async with httpx.AsyncClient(timeout=120) as c:
+                    r = await c.post(f"{llamacpp_url}/v1/chat/completions",
+                        json={"model": actual_model, "messages": msgs, "stream": False, "max_tokens": 4096, "temperature": 0.7},
+                        timeout=120)
+                    data = r.json()
+                    content = data["choices"][0]["message"]["content"]
+                    thinking, response_text = parse_thinking(content)
+                    return {"message": response_text, "thinking": thinking}
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=str(e))
+        elif ollama_ok:
             try:
                 async with httpx.AsyncClient(timeout=120) as c:
                     r = await c.post(f"{OLLAMA_HOST}/api/chat", json={"model": actual_model, "messages": msgs, "stream": False}, timeout=120)
@@ -220,6 +301,62 @@ async def chat(req: ChatRequest):
                     return {"message": response_text, "thinking": thinking}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
+
+async def stream_llamacpp(model: str, messages: list, show_thinking: bool = False, base_url: str = ""):
+    try:
+        async with httpx.AsyncClient(timeout=300) as c:
+            async with c.stream("POST", f"{base_url or LLAMA_CPP_HOST}/v1/chat/completions",
+                json={"model": model, "messages": messages, "stream": True, "max_tokens": 4096, "temperature": 0.7},
+                timeout=300) as response:
+                buffer = ""
+                in_thinking = False
+                thinking_buf = ""
+                async for line in response.aiter_lines():
+                    if line and line.startswith("data: "):
+                        payload = line[6:].strip()
+                        if payload == "[DONE]":
+                            if show_thinking and in_thinking and buffer.strip():
+                                yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                            yield f"data: {json.dumps({'done': True})}\n\n"
+                            return
+                        try:
+                            data = json.loads(payload)
+                            choice = data.get("choices", [{}])[0]
+                            delta = choice.get("delta", {})
+                            chunk = delta.get("content", "")
+                            if chunk:
+                                buffer += chunk
+                                if show_thinking:
+                                    idx = buffer.find("[THINK]")
+                                    if idx != -1 and not in_thinking:
+                                        pre = buffer[:idx]
+                                        if pre.strip():
+                                            yield f"data: {json.dumps({'content': pre})}\n\n"
+                                        buffer = buffer[idx + 7:]
+                                        in_thinking = True
+                                        thinking_buf = ""
+                                    if in_thinking:
+                                        end_idx = buffer.find("[/THINK]")
+                                        if end_idx != -1:
+                                            thinking_buf += buffer[:end_idx]
+                                            yield f"data: {json.dumps({'thinking': thinking_buf})}\n\n"
+                                            buffer = buffer[end_idx + 8:]
+                                            in_thinking = False
+                                        else:
+                                            thinking_buf += buffer
+                                            buffer = ""
+                                else:
+                                    yield f"data: {json.dumps({'content': chunk})}\n\n"
+                            if choice.get("finish_reason"):
+                                if show_thinking and in_thinking and buffer.strip():
+                                    yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                                yield f"data: {json.dumps({'done': True})}\n\n"
+                                return
+                        except json.JSONDecodeError:
+                            continue
+    except Exception as e:
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        yield f"data: {json.dumps({'done': True})}\n\n"
 
 async def stream_ollama(model: str, messages: list, show_thinking: bool = False):
     try:

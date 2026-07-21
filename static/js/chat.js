@@ -58,13 +58,24 @@
     el.saveAppBtn         = $('#saveAppBtn');
     el.voiceBtn           = $('#voiceBtn');
     el.thinkingToggle     = $('#thinkingToggle');
+    el.connectBtn         = $('#connectBtn');
+    el.connectStatus      = $('#connectStatus');
   }
 
   /* ============================================================
      API
      ============================================================ */
+  function apiBase() {
+    // On Vercel, route through tunnel. On localhost, use same origin.
+    if (state.localUrl && !window.location.hostname.includes('localhost')) {
+      return state.localUrl;
+    }
+    return '';
+  }
+
   async function api(path, opts = {}) {
-    const res = await fetch(path, {
+    const url = apiBase() + path;
+    const res = await fetch(url, {
       headers: { 'Content-Type': 'application/json', ...opts.headers },
       ...opts,
     });
@@ -130,12 +141,12 @@
 
   function renderModelSelect() {
     el.modelSelect.innerHTML = '<option value="">\u2014 Select model \u2014</option>';
-    state.models.filter(isZegrateModel).forEach((m) => {
+    state.models.forEach((m) => {
       const opt = document.createElement('option');
       opt.value = m.name;
       const suffix = m.size ? '  (' + formatSize(m.size) + ')' : '';
       opt.textContent = displayName(m.name) + suffix;
-      opt.style.fontWeight = '600';
+      if (isZegrateModel(m)) opt.style.fontWeight = '600';
       el.modelSelect.appendChild(opt);
     });
     el.modelSelect.value = state.selectedModel;
@@ -365,7 +376,7 @@
 
     const messagesForAPI = state.messages.map((m) => ({ role: m.role, content: m.content }));
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking }),
@@ -473,8 +484,8 @@
   async function saveMessages(msgs) {
     if (!state.currentConvId) return;
     try {
-      await fetch('/api/conversations/' + state.currentConvId + '/messages', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: msgs }),
+      await api('/api/conversations/' + state.currentConvId + '/messages', {
+        method: 'POST', body: JSON.stringify({ messages: msgs }),
       });
     } catch (_) {}
   }
@@ -687,9 +698,8 @@
 
   async function speakText(text) {
     try {
-      const res = await fetch('/api/tts', {
+      const res = await api('/api/tts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text.substring(0, 500) }),
       });
       if (!res.ok) throw new Error('TTS failed');
@@ -787,45 +797,71 @@
   }
 
   async function checkConnection() {
+    // 1. Try Vercel health endpoint (discovers tunnel automatically)
     try {
-      const res = await fetch(baseURL() + '/api/health');
+      const res = await fetch('/api/health');
       const data = await res.json();
-      if (!data.ollama && !state.localUrl) {
-        // Try localhost first
-        try {
-          const localRes = await fetch('http://localhost:8000/api/health');
-          const localData = await localRes.json();
-          if (localData.ollama) {
-            state.localUrl = 'http://localhost:8000';
-            localStorage.setItem('zg-local-url', state.localUrl);
-            updateConnectStatus();
-            loadModels();
-            return;
-          }
-        } catch (_) {}
-
-        // Try tunnel URL from GitHub Gist
-        try {
-          const gistRes = await fetch(TUNNEL_GIST);
-          const tunnelUrl = (await gistRes.text()).trim();
-          if (tunnelUrl) {
-            const tunnelRes = await fetch(tunnelUrl + '/api/health');
-            const tunnelData = await tunnelRes.json();
-            if (tunnelData.ollama) {
-              state.localUrl = tunnelUrl;
-              localStorage.setItem('zg-local-url', state.localUrl);
-              updateConnectStatus();
-              loadModels();
-              return;
-            }
-          }
-        } catch (_) {}
-
-        el.connectBtn.title = 'Offline - click to connect to local Ollama';
-      } else {
-        el.connectBtn.title = 'Connected to Ollama';
+      if (data.tunnel_url && data.llamacpp) {
+        state.localUrl = data.tunnel_url;
+        localStorage.setItem('zg-local-url', state.localUrl);
+        updateConnectStatus();
+        loadModels();
+        return;
+      }
+      if (data.ollama || data.llamacpp) {
+        el.connectBtn.title = 'Connected';
+        return;
       }
     } catch (_) {}
+
+    // 2. Try saved tunnel URL (fast path, may be stale)
+    if (state.localUrl) {
+      try {
+        const res = await fetch(state.localUrl + '/api/health');
+        const data = await res.json();
+        if (data.ollama || data.llamacpp) {
+          updateConnectStatus();
+          loadModels();
+          return;
+        }
+      } catch (_) {
+        state.localUrl = '';
+        localStorage.removeItem('zg-local-url');
+        updateConnectStatus();
+      }
+    }
+
+    // 3. Try localhost (development)
+    try {
+      const localRes = await fetch('http://localhost:8000/api/health');
+      const localData = await localRes.json();
+      if (localData.ollama || localData.llamacpp) {
+        state.localUrl = 'http://localhost:8000';
+        localStorage.setItem('zg-local-url', state.localUrl);
+        updateConnectStatus();
+        loadModels();
+        return;
+      }
+    } catch (_) {}
+
+    // 4. Try tunnel URL from GitHub Gist
+    try {
+      const gistRes = await fetch(TUNNEL_GIST);
+      const tunnelUrl = (await gistRes.text()).trim();
+      if (tunnelUrl) {
+        const tunnelRes = await fetch(tunnelUrl + '/api/health');
+        const tunnelData = await tunnelRes.json();
+        if (tunnelData.ollama || tunnelData.llamacpp) {
+          state.localUrl = tunnelUrl;
+          localStorage.setItem('zg-local-url', state.localUrl);
+          updateConnectStatus();
+          loadModels();
+          return;
+        }
+      }
+    } catch (_) {}
+
+    el.connectBtn.title = 'Offline - click to connect to local server';
   }
 
   /* ============================================================
@@ -853,12 +889,10 @@
     }
   }
 
+  const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
+
   function setup() {
-    const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
-
-  // ... setup code ...
-
-  cacheEls();
+    cacheEls();
     loadTheme();
     initThinking();
     setupSidebarTabs();
@@ -934,6 +968,7 @@
      ============================================================ */
   async function init() {
     setup();
+    await checkConnection();
     await loadModels();
     await loadConversations();
     await loadTodos();
