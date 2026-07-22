@@ -262,14 +262,23 @@ async def chat(req: ChatRequest):
     else:
         if llamacpp_ok:
             try:
-                async with httpx.AsyncClient(timeout=120) as c:
-                    r = await c.post(f"{llamacpp_url}/v1/chat/completions",
-                        json={"model": actual_model, "messages": msgs, "stream": False, "max_tokens": 4096, "temperature": 0.7},
-                        timeout=120)
-                    data = r.json()
-                    content = data["choices"][0]["message"]["content"]
-                    thinking, response_text = parse_thinking(content)
-                    return {"message": response_text, "thinking": thinking}
+                is_tunnel = llamacpp_url != LLAMA_CPP_HOST
+                if is_tunnel:
+                    async with httpx.AsyncClient(timeout=120) as c:
+                        r = await c.post(f"{llamacpp_url}/api/chat",
+                            json={"model": actual_model, "messages": msgs, "stream": False, "show_thinking": req.show_thinking},
+                            timeout=120)
+                        data = r.json()
+                        return data
+                else:
+                    async with httpx.AsyncClient(timeout=120) as c:
+                        r = await c.post(f"{llamacpp_url}/v1/chat/completions",
+                            json={"model": actual_model, "messages": msgs, "stream": False, "max_tokens": 4096, "temperature": 0.7},
+                            timeout=120)
+                        data = r.json()
+                        content = data["choices"][0]["message"]["content"]
+                        thinking, response_text = parse_thinking(content)
+                        return {"message": response_text, "thinking": thinking}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         elif ollama_ok:
@@ -303,57 +312,70 @@ async def chat(req: ChatRequest):
                 raise HTTPException(status_code=500, detail=str(e))
 
 async def stream_llamacpp(model: str, messages: list, show_thinking: bool = False, base_url: str = ""):
+    url = base_url or LLAMA_CPP_HOST
+    is_tunnel = url != LLAMA_CPP_HOST
     try:
-        async with httpx.AsyncClient(timeout=300) as c:
-            async with c.stream("POST", f"{base_url or LLAMA_CPP_HOST}/v1/chat/completions",
-                json={"model": model, "messages": messages, "stream": True, "max_tokens": 4096, "temperature": 0.7},
-                timeout=300) as response:
-                buffer = ""
-                in_thinking = False
-                thinking_buf = ""
-                async for line in response.aiter_lines():
-                    if line and line.startswith("data: "):
-                        payload = line[6:].strip()
-                        if payload == "[DONE]":
-                            if show_thinking and in_thinking and buffer.strip():
-                                yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
-                            yield f"data: {json.dumps({'done': True})}\n\n"
-                            return
-                        try:
-                            data = json.loads(payload)
-                            choice = data.get("choices", [{}])[0]
-                            delta = choice.get("delta", {})
-                            chunk = delta.get("content", "")
-                            if chunk:
-                                buffer += chunk
-                                if show_thinking:
-                                    idx = buffer.find("[THINK]")
-                                    if idx != -1 and not in_thinking:
-                                        pre = buffer[:idx]
-                                        if pre.strip():
-                                            yield f"data: {json.dumps({'content': pre})}\n\n"
-                                        buffer = buffer[idx + 7:]
-                                        in_thinking = True
-                                        thinking_buf = ""
-                                    if in_thinking:
-                                        end_idx = buffer.find("[/THINK]")
-                                        if end_idx != -1:
-                                            thinking_buf += buffer[:end_idx]
-                                            yield f"data: {json.dumps({'thinking': thinking_buf})}\n\n"
-                                            buffer = buffer[end_idx + 8:]
-                                            in_thinking = False
-                                        else:
-                                            thinking_buf += buffer
-                                            buffer = ""
-                                else:
-                                    yield f"data: {json.dumps({'content': chunk})}\n\n"
-                            if choice.get("finish_reason"):
+        if is_tunnel:
+            async with httpx.AsyncClient(timeout=300) as c:
+                async with c.stream("POST", f"{url}/api/chat",
+                    json={"model": model, "messages": messages, "stream": True, "show_thinking": show_thinking},
+                    timeout=300) as response:
+                    async for line in response.aiter_lines():
+                        if line and line.startswith("data: "):
+                            yield line + "\n\n"
+                        elif line:
+                            yield line + "\n\n"
+        else:
+            async with httpx.AsyncClient(timeout=300) as c:
+                async with c.stream("POST", f"{url}/v1/chat/completions",
+                    json={"model": model, "messages": messages, "stream": True, "max_tokens": 4096, "temperature": 0.7},
+                    timeout=300) as response:
+                    buffer = ""
+                    in_thinking = False
+                    thinking_buf = ""
+                    async for line in response.aiter_lines():
+                        if line and line.startswith("data: "):
+                            payload = line[6:].strip()
+                            if payload == "[DONE]":
                                 if show_thinking and in_thinking and buffer.strip():
                                     yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
                                 yield f"data: {json.dumps({'done': True})}\n\n"
                                 return
-                        except json.JSONDecodeError:
-                            continue
+                            try:
+                                data = json.loads(payload)
+                                choice = data.get("choices", [{}])[0]
+                                delta = choice.get("delta", {})
+                                chunk = delta.get("content", "")
+                                if chunk:
+                                    buffer += chunk
+                                    if show_thinking:
+                                        idx = buffer.find("[THINK]")
+                                        if idx != -1 and not in_thinking:
+                                            pre = buffer[:idx]
+                                            if pre.strip():
+                                                yield f"data: {json.dumps({'content': pre})}\n\n"
+                                            buffer = buffer[idx + 7:]
+                                            in_thinking = True
+                                            thinking_buf = ""
+                                        if in_thinking:
+                                            end_idx = buffer.find("[/THINK]")
+                                            if end_idx != -1:
+                                                thinking_buf += buffer[:end_idx]
+                                                yield f"data: {json.dumps({'thinking': thinking_buf})}\n\n"
+                                                buffer = buffer[end_idx + 8:]
+                                                in_thinking = False
+                                            else:
+                                                thinking_buf += buffer
+                                                buffer = ""
+                                    else:
+                                        yield f"data: {json.dumps({'content': chunk})}\n\n"
+                                if choice.get("finish_reason"):
+                                    if show_thinking and in_thinking and buffer.strip():
+                                        yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                                    yield f"data: {json.dumps({'done': True})}\n\n"
+                                    return
+                            except json.JSONDecodeError:
+                                continue
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
