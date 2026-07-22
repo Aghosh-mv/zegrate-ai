@@ -19,7 +19,7 @@ app.add_middleware(
 )
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-LLAMA_CPP_HOST = os.getenv("LLAMA_CPP_HOST", "http://localhost:8001")
+LLAMA_CPP_HOST = os.getenv("LLAMA_CPP_HOST", "http://localhost:8080")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 ELEVENLABS_KEY = os.getenv("ELEVENLABS_KEY", "sk_b7e22ce5108865f919c24d43435e6b275d90c2abe4ead3b8")
 ON_VERCEL = os.getenv("VERCEL", "0") == "1"
