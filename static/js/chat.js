@@ -17,6 +17,7 @@
     mediaRecorder: null,
     audioChunks: [],
     showThinking: localStorage.getItem('zg-thinking') === 'true',
+    uncensored: localStorage.getItem('zg-uncensored') === 'true',
     localUrl: localStorage.getItem('zg-local-url') || '',
     usingLocal: false,
   };
@@ -57,7 +58,8 @@
     el.appCodeInput       = $('#appCodeInput');
     el.saveAppBtn         = $('#saveAppBtn');
     el.voiceBtn           = $('#voiceBtn');
-    el.thinkingToggle     = $('#thinkingToggle');
+    el.thinkingToggle     = $('#thinkingToggleSettings');
+    el.uncensoredToggle   = $('#uncensoredToggle');
     el.connectBtn         = $('#connectBtn');
     el.connectStatus      = $('#connectStatus');
   }
@@ -379,7 +381,7 @@
       const res = await fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking }),
+        body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking, uncensored: state.uncensored }),
       });
       if (!res.ok) {
         let errMsg = 'HTTP ' + res.status;
@@ -757,11 +759,19 @@
   }
 
   function toggleThinking() {
-    state.showThinking = !state.showThinking;
+    state.showThinking = el.thinkingToggle.checked;
     localStorage.setItem('zg-thinking', state.showThinking);
-    el.thinkingToggle.classList.toggle('active', state.showThinking);
-    el.thinkingToggle.title = state.showThinking ? 'Hide thinking' : 'Show thinking';
-    toast(state.showThinking ? 'Thinking visible' : 'Thinking hidden');
+  }
+
+  function toggleUncensored() {
+    state.uncensored = el.uncensoredToggle.checked;
+    localStorage.setItem('zg-uncensored', state.uncensored);
+    document.documentElement.classList.toggle('uncensored-mode', state.uncensored);
+  }
+
+  function initUncensored() {
+    el.uncensoredToggle.checked = state.uncensored;
+    document.documentElement.classList.toggle('uncensored-mode', state.uncensored);
   }
 
   /* ============================================================
@@ -883,10 +893,7 @@
      EVENTS
      ============================================================ */
   function initThinking() {
-    if (state.showThinking) {
-      el.thinkingToggle.classList.add('active');
-      el.thinkingToggle.title = 'Hide thinking';
-    }
+    el.thinkingToggle.checked = state.showThinking;
   }
 
   const TUNNEL_GIST = 'https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt';
@@ -895,6 +902,7 @@
     cacheEls();
     loadTheme();
     initThinking();
+    initUncensored();
     setupSidebarTabs();
     setupChatSearch();
     setupVoice();
@@ -917,7 +925,8 @@
       el.sendBtn.disabled = !el.messageInput.value.trim() || state.isStreaming || !state.currentConvId || !state.selectedModel;
     });
     el.themeToggle.addEventListener('click', toggleTheme);
-    el.thinkingToggle.addEventListener('click', toggleThinking);
+    el.thinkingToggle.addEventListener('change', toggleThinking);
+    el.uncensoredToggle.addEventListener('change', toggleUncensored);
 
     // Connection
     el.connectBtn.addEventListener('click', openConnectModal);
