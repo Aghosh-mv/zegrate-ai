@@ -42,26 +42,12 @@
     el.modelCards         = $('#modelCards');
     el.chatContainer      = $('#chatContainer');
     el.chatSearch         = $('#chatSearch');
-    el.sidebarTabs        = $$('.sidebar-tab');
-    el.tabPanels          = $$('.tab-panel');
-    el.todoInput          = $('#todoInput');
-    el.addTodoBtn         = $('#addTodoBtn');
-    el.todoList           = $('#todoList');
-    el.appList            = $('#appList');
-    el.newAppBtn          = $('#newAppBtn');
-    el.appSearch          = $('#appSearch');
-    el.appModal           = $('#appModal');
-    el.appModalTitle      = $('#appModalTitle');
-    el.appNameInput       = $('#appNameInput');
-    el.appDescInput       = $('#appDescInput');
-    el.appCategoryInput   = $('#appCategoryInput');
-    el.appCodeInput       = $('#appCodeInput');
-    el.saveAppBtn         = $('#saveAppBtn');
     el.voiceBtn           = $('#voiceBtn');
     el.thinkingToggle     = $('#thinkingToggleSettings');
     el.uncensoredToggle   = $('#uncensoredToggle');
     el.connectBtn         = $('#connectBtn');
     el.connectStatus      = $('#connectStatus');
+    el.settingsBtn        = $('#settingsBtn');
   }
 
   /* ============================================================
@@ -190,14 +176,13 @@
      SIDEBAR TABS
      ============================================================ */
   function setupSidebarTabs() {
-    el.sidebarTabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        el.sidebarTabs.forEach(t => t.classList.remove('active'));
-        el.tabPanels.forEach(p => p.classList.remove('active'));
-        tab.classList.add('active');
-        const panel = document.getElementById('panel-' + tab.dataset.tab);
-        if (panel) panel.classList.add('active');
-      });
+    const chatsPanel = document.getElementById('panel-chats');
+    const settingsPanel = document.getElementById('panel-settings');
+    el.settingsBtn.addEventListener('click', () => {
+      const isSettings = settingsPanel.classList.contains('active');
+      chatsPanel.classList.toggle('active', isSettings);
+      settingsPanel.classList.toggle('active', !isSettings);
+      el.settingsBtn.classList.toggle('active', !isSettings);
     });
   }
 
@@ -445,6 +430,32 @@
         }
       }
       contentDiv.innerHTML = formatContent(assistMsg.content);
+      // Auto-generate image if AI mentioned it
+      const imageKw = ['generating an image', 'generating it', "here's the image", 'creating an image', "let me generate", "i'll generate"];
+      const shouldImage = imageKw.some(kw => assistMsg.content.toLowerCase().includes(kw));
+      if (shouldImage) {
+        const imgDiv = document.createElement('div');
+        imgDiv.className = 'chat-image';
+        imgDiv.innerHTML = '<div class="image-loading">Generating image...</div>';
+        contentDiv.appendChild(imgDiv);
+        scrollToBottom();
+        try {
+          const imgRes = await fetch(apiBase() + '/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: assistMsg.content.slice(0, 300), width: 512, height: 512 }),
+          });
+          if (imgRes.ok) {
+            const imgData = await imgRes.json();
+            imgDiv.innerHTML = '<img src="' + imgData.url + '" alt="Generated image" style="max-width:100%;border-radius:8px;margin-top:8px">';
+          } else {
+            imgDiv.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Image generation unavailable</p>';
+          }
+        } catch (_) {
+          imgDiv.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Image generation unavailable</p>';
+        }
+        scrollToBottom();
+      }
       const thinkEl = document.getElementById('think-' + assistMsg.id);
       if (thinkEl && assistMsg.thinking) {
         thinkEl.querySelector('.thinking-text').textContent = assistMsg.thinking;
@@ -928,35 +939,22 @@
     el.thinkingToggle.addEventListener('change', toggleThinking);
     el.uncensoredToggle.addEventListener('change', toggleUncensored);
 
+    // Hint chips
+    document.querySelectorAll('.hint-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (!state.currentConvId) return;
+        el.messageInput.value = chip.textContent.replace(/"/g, '');
+        el.messageInput.dispatchEvent(new Event('input'));
+        el.messageInput.focus();
+      });
+    });
+
     // Connection
     el.connectBtn.addEventListener('click', openConnectModal);
     document.getElementById('saveConnectBtn').addEventListener('click', saveConnection);
     document.getElementById('connectModal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('connectModal')) closeConnectModal();
     });
-
-    // Todo
-    el.addTodoBtn.addEventListener('click', addTodo);
-    el.todoInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTodo(); } });
-
-    // Apps
-    el.newAppBtn.addEventListener('click', () => {
-      state.editingAppId = null;
-      el.appModalTitle.textContent = 'New App';
-      el.appNameInput.value = '';
-      el.appDescInput.value = '';
-      el.appCategoryInput.value = 'web';
-      el.appCodeInput.value = '';
-      el.appModal.style.display = 'flex';
-    });
-    el.saveAppBtn.addEventListener('click', saveApp);
-    el.appSearch.addEventListener('input', () => {
-      clearTimeout(window._appSearchTimer);
-      window._appSearchTimer = setTimeout(loadApps, 300);
-    });
-
-    // Close modal on outside click
-    el.appModal.addEventListener('click', (e) => { if (e.target === el.appModal) window.closeAppModal(); });
 
     // Close sidebar on mobile
     document.addEventListener('click', (e) => {
@@ -980,8 +978,6 @@
     await checkConnection();
     await loadModels();
     await loadConversations();
-    await loadTodos();
-    await loadApps();
     if (state.selectedModel) await startNewChat();
   }
 

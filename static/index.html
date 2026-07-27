@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css?v=5">
+  <link rel="stylesheet" href="/static/css/style.css?v=6">
 </head>
 <body>
   <div id="app">
@@ -15,216 +15,25 @@
       <div class="sidebar-header">
         <div class="logo">
           <div class="logo-icon">Z</div>
-          <span>Zegrate AI</span>
+          <span>Zegrate</span>
         </div>
         <button id="newChatBtn" class="new-chat-btn">+ New Chat</button>
-      </div>
-
-      <div class="sidebar-tabs">
-        <button class="sidebar-tab active" data-tab="chats">Chat</button>
-        <button class="sidebar-tab" data-tab="assets">Assets</button>
-        <button class="sidebar-tab" data-tab="game">Game</button>
-        <button class="sidebar-tab" data-tab="group">Group</button>
-        <button class="sidebar-tab" data-tab="apps">Apps</button>
-        <button class="sidebar-tab" data-tab="todo">Todo</button>
-        <button class="sidebar-tab" data-tab="settings">Settings</button>
       </div>
 
       <div id="sidebarContent" class="sidebar-content">
         <div class="tab-panel active" id="panel-chats">
           <div class="search-bar">
-            <input type="text" id="chatSearch" placeholder="Search conversations..." autocomplete="off">
+            <input type="text" id="chatSearch" placeholder="Search..." autocomplete="off">
           </div>
           <div id="conversationList" class="conversation-list"></div>
         </div>
 
-        <div class="tab-panel" id="panel-assets">
-          <div class="panel-header-row">
-            <span class="panel-title">Asset Studio</span>
-            <button id="genAssetBtn" class="small-btn primary">+ Generate</button>
-          </div>
-          <div class="asset-controls">
-            <input type="text" id="assetPrompt" placeholder="Describe your asset..." class="asset-input" autocomplete="off">
-            <div class="asset-type-row">
-              <button class="asset-type-btn active" data-atype="sprite">Sprite</button>
-              <button class="asset-type-btn" data-atype="texture">Texture</button>
-              <button class="asset-type-btn" data-atype="shader">Shader</button>
-              <button class="asset-type-btn" data-atype="icon">Icon</button>
-            </div>
-            <div class="asset-size-row">
-              <select id="assetSize" class="asset-select">
-                <option value="128">128px</option>
-                <option value="256" selected>256px</option>
-                <option value="512">512px</option>
-              </select>
-              <select id="assetStyle" class="asset-select">
-                <option value="pixel">Pixel Art</option>
-                <option value="flat">Flat</option>
-                <option value="realistic">Realistic</option>
-                <option value="abstract">Abstract</option>
-              </select>
-            </div>
-          </div>
-          <div id="assetGrid" class="asset-grid"></div>
-          <div id="shaderPreview" class="shader-preview" style="display:none">
-            <canvas id="shaderCanvas" width="256" height="256"></canvas>
-            <div class="shader-controls">
-              <button id="shaderRunBtn" class="small-btn primary">Run</button>
-              <button id="shaderExportBtn" class="small-btn">Export GLSL</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-game">
-          <div class="panel-header-row">
-            <span class="panel-title">Coder Game Engine</span>
-            <button id="newGameBtn" class="small-btn primary">+ New</button>
-          </div>
-          <div class="game-engine" id="gameEngine">
-            <div class="game-toolbar">
-              <button id="gamePlayBtn" class="game-tool-btn active" title="Play">&#9654;</button>
-              <button id="gamePauseBtn" class="game-tool-btn" title="Pause">&#10074;&#10074;</button>
-              <button id="gameStopBtn" class="game-tool-btn" title="Stop">&#9632;</button>
-              <span class="game-sep"></span>
-              <select id="gameTemplate" class="game-select">
-                <option value="">Template...</option>
-                <option value="platformer">Platformer</option>
-                <option value="topdown">Top-Down RPG</option>
-                <option value="shooter">Space Shooter</option>
-                <option value="puzzle">Puzzle</option>
-                <option value="racing">Racing</option>
-                <option value="fighting">Fighting</option>
-                <option value="roguelike">Roguelike</option>
-                <option value="sandbox">Sandbox</option>
-              </select>
-            </div>
-            <div class="game-workspace">
-              <div class="game-main">
-                <div class="game-tabs">
-                  <button class="game-tab active" data-gtab="code">Code</button>
-                  <button class="game-tab" data-gtab="visual">Preview</button>
-                  <button class="game-tab" data-gtab="shaders">Shaders</button>
-                </div>
-                <div class="game-tab-content active" id="gtab-code">
-                  <textarea id="gameCodeEditor" class="game-code-editor" spellcheck="false" placeholder="// Zegrate Coder Game Engine
-// Write your game code or ask Zegrate to generate it!
-// Supports: Canvas 2D, WebGL, shaders, asset gen
-
-function init() {}
-function update(dt) {}
-function render(ctx) {}
-function handleInput(event) {}
-"></textarea>
-                </div>
-                <div class="game-tab-content" id="gtab-visual">
-                  <canvas id="gamePreviewCanvas" class="game-preview" width="640" height="480"></canvas>
-                </div>
-                <div class="game-tab-content" id="gtab-shaders">
-                  <textarea id="gameFragShader" class="shader-editor" spellcheck="false" placeholder="// Fragment shader (GLSL)
-precision mediump float;
-uniform float u_time;
-uniform vec2 u_resolution;
-void main() {
-  vec2 uv = gl_FragCoord.xy / u_resolution;
-  gl_FragColor = vec4(uv, sin(u_time)*0.5+0.5, 1.0);
-}"></textarea>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-group">
-          <div class="panel-header-row">
-            <span class="panel-title">Group Chat</span>
-            <button id="newGroupBtn" class="small-btn primary">+ New</button>
-          </div>
-          <div class="group-chat-controls">
-            <div class="group-name-row">
-              <input type="text" id="groupName" placeholder="Group name (e.g., 'Dev Team')" autocomplete="off" class="group-input">
-            </div>
-            <div class="group-members-row">
-              <label>Members:</label>
-              <div id="groupMemberList" class="group-member-list">
-                <div class="group-member-tag" data-member="Alex">Alex <span class="remove-member">×</span></div>
-                <div class="group-member-tag" data-member="Sam">Sam <span class="remove-member">×</span></div>
-                <div class="group-member-tag" data-member="Jordan">Jordan <span class="remove-member">×</span></div>
-              </div>
-              <input type="text" id="addMemberInput" placeholder="Add person..." class="group-input-small" autocomplete="off">
-            </div>
-            <div class="group-style-row">
-              <label>Chat Style:</label>
-              <select id="groupStyle" class="group-select">
-                <option value="casual">Casual Friends</option>
-                <option value="work">Work Colleagues</option>
-                <option value="chaotic">Chaotic/Meme</option>
-                <option value="gaming">Gaming Squad</option>
-                <option value="creative">Creative Collab</option>
-                <option value="serious">Serious Discussion</option>
-              </select>
-              <label>Bot Frequency:</label>
-              <select id="groupFrequency" class="group-select">
-                <option value="low">Quiet (20%)</option>
-                <option value="medium" selected>Balanced (40%)</option>
-                <option value="high">Active (60%)</option>
-                <option value="very_high">Loud (80%)</option>
-              </select>
-            </div>
-            <div class="group-style-row">
-              <label>Message Splitting:</label>
-              <select id="groupSplit" class="group-select">
-                <option value="never">Never (one message)</option>
-                <option value="sometimes">Sometimes (natural splits)</option>
-                <option value="dramatic">Dramatic (drag effects)</option>
-                <option value="chaotic">Chaotic (random splits)</option>
-              </select>
-            </div>
-          </div>
-          <div id="groupChatContainer" class="group-chat-container">
-            <div id="groupChatMessages" class="group-chat-messages"></div>
-            <div class="group-chat-input-row">
-              <select id="groupMsgSender" class="group-select-small">
-                <option value="Alex">Alex</option>
-                <option value="Sam">Sam</option>
-                <option value="Jordan">Jordan</option>
-                <option value="Zegrate">🤖 Zegrate</option>
-              </select>
-              <input type="text" id="groupMsgInput" placeholder="Type a message..." class="group-input" autocomplete="off">
-              <button id="groupSendBtn" class="small-btn primary">Send</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="tab-panel" id="panel-apps">
-          <div class="panel-header-row">
-            <button id="newAppBtn" class="small-btn">+ New App</button>
-          </div>
-          <div class="search-bar">
-            <input type="text" id="appSearch" placeholder="Search apps..." autocomplete="off">
-          </div>
-          <div id="appList" class="app-list"></div>
-        </div>
-
-        <div class="tab-panel" id="panel-todo">
-          <div class="panel-header-row">
-            <span class="panel-title">Tasks</span>
-          </div>
-          <div class="todo-input-row">
-            <input type="text" id="todoInput" placeholder="Add a task..." autocomplete="off">
-            <button id="addTodoBtn" class="small-btn">Add</button>
-          </div>
-          <div id="todoList" class="todo-list"></div>
-        </div>
-
         <div class="tab-panel" id="panel-settings">
-          <div class="panel-header-row">
-            <span class="panel-title">Settings</span>
-          </div>
-          <div class="settings-list">
+          <div class="settings-section">
+            <div class="settings-heading">General</div>
             <div class="settings-item">
               <div class="settings-info">
                 <div class="settings-label">Content Filter</div>
-                <div class="settings-desc">Controls response filtering</div>
               </div>
               <label class="settings-switch">
                 <input type="checkbox" id="uncensoredToggle">
@@ -234,7 +43,6 @@ void main() {
             <div class="settings-item">
               <div class="settings-info">
                 <div class="settings-label">Show Thinking</div>
-                <div class="settings-desc">Display reasoning process</div>
               </div>
               <label class="settings-switch">
                 <input type="checkbox" id="thinkingToggleSettings">
@@ -246,7 +54,10 @@ void main() {
       </div>
 
       <div class="sidebar-footer">
-        <select id="modelSelect" class="model-select"></select>
+        <div class="footer-row">
+          <select id="modelSelect" class="model-select"></select>
+          <button id="settingsBtn" class="settings-btn" title="Settings">&#9881;</button>
+        </div>
       </div>
     </aside>
 
@@ -267,17 +78,13 @@ void main() {
           <div class="welcome-content">
             <div class="welcome-icon">Z</div>
             <h1>Zegrate AI</h1>
-            <p>Smart by default. Unleashed on demand.<br>Choose a model or try the Game Engine.</p>
+            <p class="welcome-sub">Ask me anything. I can code, generate images, create games, or just chat.</p>
             <div class="model-cards" id="modelCards"></div>
-            <div class="welcome-features">
-              <div class="welcome-feature" onclick="document.querySelector('[data-tab=assets]').click()">
-                <div class="wf-icon">&#127912;</div>
-                <div class="wf-text">Asset Studio<br><small>Generate sprites, textures, shaders</small></div>
-              </div>
-              <div class="welcome-feature" onclick="document.querySelector('[data-tab=game]').click()">
-                <div class="wf-icon">&#127918;</div>
-                <div class="wf-text">Coder Game<br><small>Build games with 20K+ line engine</small></div>
-              </div>
+            <div class="welcome-hints">
+              <div class="hint-chip">"Write a Python web scraper"</div>
+              <div class="hint-chip">"Generate a pixel art knight"</div>
+              <div class="hint-chip">"Make me a space shooter game"</div>
+              <div class="hint-chip">"Explain quantum computing"</div>
             </div>
           </div>
         </div>
@@ -286,7 +93,7 @@ void main() {
 
       <div class="input-area">
         <div class="input-wrapper">
-          <textarea id="messageInput" placeholder="Send a message..." rows="1" disabled></textarea>
+          <textarea id="messageInput" placeholder="Message Zegrate..." rows="1" disabled></textarea>
           <button id="voiceBtn" class="voice-btn" title="Voice input" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -304,32 +111,6 @@ void main() {
         <div class="input-footer">Zegrate AI &middot; <a href="https://hf.co/yimn-Aghosh/zegrate-turbo-debugger" target="_blank" style="color:var(--accent,#7c5cff);text-decoration:none">Models</a></div>
       </div>
     </main>
-  </div>
-
-  <!-- App Editor Modal -->
-  <div id="appModal" class="modal" style="display:none">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2 id="appModalTitle">New App</h2>
-        <button class="icon-btn modal-close" onclick="closeAppModal()">&times;</button>
-      </div>
-      <div class="modal-body">
-        <input type="text" id="appNameInput" placeholder="App name" class="modal-input">
-        <input type="text" id="appDescInput" placeholder="Short description" class="modal-input">
-        <select id="appCategoryInput" class="modal-input">
-          <option value="web">Web App</option>
-          <option value="cli">CLI Tool</option>
-          <option value="api">API</option>
-          <option value="game">Game</option>
-          <option value="other">Other</option>
-        </select>
-        <textarea id="appCodeInput" placeholder="Paste your code here..." class="modal-textarea" rows="12"></textarea>
-      </div>
-      <div class="modal-footer">
-        <button class="small-btn" onclick="closeAppModal()">Cancel</button>
-        <button id="saveAppBtn" class="small-btn primary">Save App</button>
-      </div>
-    </div>
   </div>
 
   <!-- Connection Settings Modal -->
@@ -351,9 +132,6 @@ void main() {
     </div>
   </div>
 
-  <script src="/static/js/chat.js?v=5"></script>
-  <script src="/static/js/game-engine.js?v=1"></script>
-  <script src="/static/js/assets.js?v=1"></script>
-  <script src="/static/js/group-chat.js?v=1"></script>
+  <script src="/static/js/chat.js?v=6"></script>
 </body>
 </html>

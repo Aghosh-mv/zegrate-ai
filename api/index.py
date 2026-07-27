@@ -54,9 +54,12 @@ THINK_PROMPT = {
 DEFAULT_PERSONA = {
     "role": "system",
     "content": (
-        "You are Zegrate AI — a helpful, smart, and friendly AI assistant. "
+        "You are Zegrate AI — a helpful, smart, and capable AI assistant. "
         "You are knowledgeable, direct, and efficient. You give clear, accurate answers without unnecessary filler. "
         "You can help with coding, analysis, writing, math, science, and general questions. "
+        "You can generate images: when someone asks for a picture, illustration, sprite, logo, concept art, or visual, "
+        "respond with a detailed image description and say you're generating it. The system will handle the actual generation. "
+        "You can write and explain code in any language. When asked to build something, write the full working code. "
         "You're conversational and approachable, but professional when needed. "
         "You don't add unnecessary disclaimers. You just give good answers. "
         "You have a subtle sense of humor but keep things appropriate. "
@@ -133,6 +136,27 @@ def map_model(name: str) -> str:
     if "zegrate" in name.lower():
         return "qwen2.5-14b-instruct"
     return name
+
+IMAGE_KEYWORDS = [
+    "generating an image", "generating it", "here's the image", "here is the image",
+    "image prompt", "creating an image", "making an image", "let me generate",
+    "I'll generate", "generating a picture", "creating a picture",
+]
+
+async def maybe_generate_image(text: str) -> Optional[str]:
+    lower = text.lower()
+    if any(kw in lower for kw in IMAGE_KEYWORDS):
+        import base64
+        prompt = text[:300]
+        try:
+            async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
+                r = await c.get(f"https://image.pollinations.ai/prompt/{prompt}?width=512&height=512&nologo=true")
+                if r.status_code == 200:
+                    b64 = base64.b64encode(r.content).decode()
+                    return f"data:image/png;base64,{b64}"
+        except Exception:
+            pass
+    return None
 
 def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False, uncensored: bool = False) -> List[Dict[str, str]]:
     persona = UNCENSORED_PERSONA if uncensored else DEFAULT_PERSONA
@@ -321,7 +345,11 @@ async def chat(req: ChatRequest):
                         data = r.json()
                         content = data["choices"][0]["message"]["content"]
                         thinking, response_text = parse_thinking(content)
-                        return {"message": response_text, "thinking": thinking}
+                        image_url = await maybe_generate_image(response_text)
+                        resp = {"message": response_text, "thinking": thinking}
+                        if image_url:
+                            resp["image_url"] = image_url
+                        return resp
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         elif ollama_ok:
@@ -331,7 +359,11 @@ async def chat(req: ChatRequest):
                     data = r.json()
                     content = data["message"]["content"]
                     thinking, response_text = parse_thinking(content)
-                    return {"message": response_text, "thinking": thinking}
+                    image_url = await maybe_generate_image(response_text)
+                    resp = {"message": response_text, "thinking": thinking}
+                    if image_url:
+                        resp["image_url"] = image_url
+                    return resp
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
         else:
@@ -351,7 +383,11 @@ async def chat(req: ChatRequest):
                                 data = r.json()
                                 content = data["choices"][0]["message"]["content"]
                                 thinking, response_text = parse_thinking(content)
-                                return {"message": response_text, "thinking": thinking}
+                                image_url = await maybe_generate_image(response_text)
+                                resp = {"message": response_text, "thinking": thinking}
+                                if image_url:
+                                    resp["image_url"] = image_url
+                                return resp
                     except Exception:
                         continue
             except Exception:
