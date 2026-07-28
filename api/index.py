@@ -440,6 +440,10 @@ async def stream_llamacpp(model: str, messages: list, show_thinking: bool = Fals
                             if payload == "[DONE]":
                                 if show_thinking and in_thinking and buffer.strip():
                                     yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                                elif show_thinking and not in_thinking and buffer.strip():
+                                    yield f"data: {json.dumps({'content': buffer})}\n\n"
+                                elif buffer.strip():
+                                    yield f"data: {json.dumps({'content': buffer})}\n\n"
                                 yield f"data: {json.dumps({'done': True})}\n\n"
                                 return
                             try:
@@ -473,6 +477,8 @@ async def stream_llamacpp(model: str, messages: list, show_thinking: bool = Fals
                                 if choice.get("finish_reason"):
                                     if show_thinking and in_thinking and buffer.strip():
                                         yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                                    elif buffer.strip():
+                                        yield f"data: {json.dumps({'content': buffer})}\n\n"
                                     yield f"data: {json.dumps({'done': True})}\n\n"
                                     return
                             except json.JSONDecodeError:
@@ -514,15 +520,17 @@ async def stream_ollama(model: str, messages: list, show_thinking: bool = False)
                                         else:
                                             thinking_buf += buffer
                                             buffer = ""
-                                else:
-                                    yield f"data: {json.dumps({'content': chunk})}\n\n"
-                            if data.get("done"):
-                                if show_thinking and in_thinking and buffer.strip():
-                                    yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
-                                yield f"data: {json.dumps({'done': True})}\n\n"
-                                return
-                        except json.JSONDecodeError:
-                            continue
+                                    else:
+                                        yield f"data: {json.dumps({'content': chunk})}\n\n"
+                                if choice.get("finish_reason"):
+                                    if show_thinking and in_thinking and buffer.strip():
+                                        yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                                    elif buffer.strip():
+                                        yield f"data: {json.dumps({'content': buffer})}\n\n"
+                                    yield f"data: {json.dumps({'done': True})}\n\n"
+                                    return
+                            except json.JSONDecodeError:
+                                continue
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
@@ -571,6 +579,10 @@ async def stream_groq(messages: list, show_thinking: bool = False):
                             if payload_str == "[DONE]":
                                 if show_thinking and in_thinking and buffer.strip():
                                     yield f"data: {json.dumps({'thinking': thinking_buf + buffer})}\n\n"
+                                elif show_thinking and not in_thinking and buffer.strip():
+                                    yield f"data: {json.dumps({'content': buffer})}\n\n"
+                                elif buffer.strip():
+                                    yield f"data: {json.dumps({'content': buffer})}\n\n"
                                 yield f"data: {json.dumps({'done': True})}\n\n"
                                 return
                             try:

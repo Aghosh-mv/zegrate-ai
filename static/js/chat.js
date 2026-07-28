@@ -400,36 +400,57 @@
       msgDiv.appendChild(contentDiv);
       el.chatMessages.appendChild(msgDiv);
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let done = false;
-      while (!done) {
-        const { done: streamDone, value } = await reader.read();
-        if (streamDone) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith('data: ')) continue;
-          try {
-            const data = JSON.parse(trimmed.slice(6));
-            if (data.error) { contentDiv.innerHTML = '<p style="color:var(--danger)">Error: ' + escapeHtml(data.error) + '</p>'; assistMsg.content += '\n[Error: ' + data.error + ']'; done = true; break; }
-            if (data.done) { done = true; break; }
-            if (data.thinking) {
-              assistMsg.thinking += data.thinking;
-              const thinkEl = document.getElementById('think-' + assistMsg.id);
-              if (thinkEl) {
-                thinkEl.querySelector('.thinking-text').textContent = assistMsg.thinking;
-                thinkEl.style.display = 'block';
+      if (res.body && typeof res.body.getReader === 'function') {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let done = false;
+        while (!done) {
+          const { done: streamDone, value } = await reader.read();
+          if (streamDone) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            try {
+              const data = JSON.parse(trimmed.slice(6));
+              if (data.error) { contentDiv.innerHTML = '<p style="color:var(--danger)">Error: ' + escapeHtml(data.error) + '</p>'; assistMsg.content += '\n[Error: ' + data.error + ']'; done = true; break; }
+              if (data.done) { done = true; break; }
+              if (data.thinking) {
+                assistMsg.thinking += data.thinking;
+                const thinkEl = document.getElementById('think-' + assistMsg.id);
+                if (thinkEl) {
+                  thinkEl.querySelector('.thinking-text').textContent = assistMsg.thinking;
+                  thinkEl.style.display = 'block';
+                }
               }
-            }
-            if (data.content) { assistMsg.content += data.content; contentDiv.innerHTML = formatContent(assistMsg.content); scrollToBottom(); }
-          } catch (_) {}
+              if (data.content) { assistMsg.content += data.content; contentDiv.innerHTML = formatContent(assistMsg.content); scrollToBottom(); }
+            } catch (_) {}
+          }
+        }
+      }
+      if (!assistMsg.content) {
+        const fbRes = await fetch(apiBase() + '/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: false, show_thinking: state.showThinking, uncensored: state.uncensored }),
+        });
+        if (fbRes.ok) {
+          const fbData = await fbRes.json();
+          assistMsg.content = fbData.message || fbData.choices?.[0]?.message?.content || '';
+          if (fbData.thinking) assistMsg.thinking = fbData.thinking;
         }
       }
       contentDiv.innerHTML = formatContent(assistMsg.content);
+      if (assistMsg.thinking && state.showThinking) {
+        const thinkEl = document.getElementById('think-' + assistMsg.id);
+        if (thinkEl) {
+          thinkEl.querySelector('.thinking-text').textContent = assistMsg.thinking;
+          thinkEl.style.display = '';
+        }
+      }
       // Auto-generate image if AI mentioned it
       const imageKw = ['generating an image', 'generating it', "here's the image", 'creating an image', "let me generate", "i'll generate"];
       const shouldImage = imageKw.some(kw => assistMsg.content.toLowerCase().includes(kw));
