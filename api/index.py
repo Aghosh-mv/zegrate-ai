@@ -23,6 +23,7 @@ LLAMA_CPP_HOST = os.getenv("LLAMA_CPP_HOST", "http://localhost:8080")
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 GROQ_KEY = os.getenv("GROQ_KEY", "")
 ELEVENLABS_KEY = os.getenv("ELEVENLABS_KEY", "")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
 ON_VERCEL = os.getenv("VERCEL", "0") == "1"
 TUNNEL_GIST = "https://gist.githubusercontent.com/Aghosh-mv/78eb3a0b4db48c73b1276974bd156008/raw/tunnel-url.txt"
 
@@ -54,9 +55,13 @@ THINK_PROMPT = {
 DEFAULT_PERSONA = {
     "role": "system",
     "content": (
-        "You are Zegrate AI — a helpful, smart, and capable AI assistant. "
+        "You are Zegrate AI — a helpful, smart, and capable AI assistant with real-time web search. "
         "You are knowledgeable, direct, and efficient. You give clear, accurate answers without unnecessary filler. "
         "You can help with coding, analysis, writing, math, science, and general questions. "
+        "IMPORTANT: When web search results are provided in the context, use them to give accurate, current answers. "
+        "Cite sources naturally (e.g. 'According to [1]...' or 'Recent reports show...'). "
+        "If search results don't fully answer the question, say so — don't make things up. "
+        "If no web context is provided, use your training knowledge. "
         "You can generate images: when someone asks for a picture, illustration, sprite, logo, concept art, or visual, "
         "respond with a detailed image description and say you're generating it. The system will handle the actual generation. "
         "You can write and explain code in any language. When asked to build something, write the full working code. "
@@ -137,6 +142,69 @@ def map_model(name: str) -> str:
         return "qwen2.5-14b-instruct"
     return name
 
+async def web_search(query: str, num_results: int = 5) -> str:
+    """Search the web via SerpAPI and return formatted context"""
+    if not SERPAPI_KEY:
+        return ""
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get("https://serpapi.com/search.json", params={
+                "q": query,
+                "engine": "google",
+                "api_key": SERPAPI_KEY,
+                "num": num_results,
+                "hl": "en",
+            })
+            if r.status_code != 200:
+                return ""
+            data = r.json()
+            results = data.get("organic_results", [])
+            if not results:
+                return ""
+            parts = []
+            for i, res in enumerate(results[:num_results], 1):
+                title = res.get("title", "")
+                snippet = res.get("snippet", "")
+                link = res.get("link", "")
+                if title and snippet:
+                    parts.append(f"[{i}] {title}\n    {snippet}\n    Source: {link}")
+            if not parts:
+                return ""
+            return "\n\n".join(parts)
+    except Exception:
+        return ""
+
+
+def needs_web_search(query: str) -> bool:
+    """Determine if a query benefits from web search"""
+    q = query.lower().strip()
+    skip_patterns = [
+        "hello", "hi", "hey", "how are you", "what's up",
+        "thank", "thanks", "bye", "goodbye",
+        "write code", "write a function", "write a script",
+        "explain this code", "debug this", "fix this error",
+        "what is a", "define ", "how does .* work",
+        "tell me a joke", "translate ", "summarize ",
+    ]
+    for pat in skip_patterns:
+        if pat in q:
+            return False
+    search_triggers = [
+        "latest", "recent", "news", "current", "today", "now",
+        "who is", "what is", "when did", "where is", "how many",
+        "price", "cost", "stock", "weather", "score",
+        "best ", "top ", "review", "comparison", "vs",
+        "how to", "tutorial", "guide",
+        "2024", "2025", "2026",
+    ]
+    for trigger in search_triggers:
+        if trigger in q:
+            return True
+    if len(q.split()) > 5:
+        return True
+    return True
+
+
 IMAGE_KEYWORDS = [
     "generating an image", "generating it", "here's the image", "here is the image",
     "image prompt", "creating an image", "making an image", "let me generate",
@@ -158,11 +226,22 @@ async def maybe_generate_image(text: str) -> Optional[str]:
             pass
     return None
 
-def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False, uncensored: bool = False) -> List[Dict[str, str]]:
+def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False, uncensored: bool = False, web_context: str = "") -> List[Dict[str, str]]:
     persona = UNCENSORED_PERSONA if uncensored else DEFAULT_PERSONA
     result = [persona]
     if show_thinking:
         result.append(THINK_PROMPT)
+    if web_context and not uncensored:
+        result.append({
+            "role": "system",
+            "content": (
+                "Here are current web search results for the user's question. "
+                "Use this information to give an accurate, up-to-date answer. "
+                "Cite sources naturally (e.g. 'According to [1]...' or 'Recent reports [2] show...'). "
+                "If the results don't fully answer the question, say so — don't make things up.\n\n"
+                f"WEB SEARCH RESULTS:\n{web_context}"
+            )
+        })
     result.extend(msgs)
     return result
 
@@ -302,31 +381,45 @@ async def list_models():
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     actual_model = map_model(req.model)
-    msgs = build_messages_with_reasoning(req.messages, req.show_thinking, req.uncensored)
+
+    # Web search before responding (skip for uncensored mode)
+    web_context = ""
+    if not req.uncensored:
+        last_user_msg = ""
+        for m in reversed(req.messages):
+            if m.get("role") == "user":
+                last_user_msg = m.get("content", "")
+                break
+        if last_user_msg and needs_web_search(last_user_msg):
+            web_context = await web_search(last_user_msg)
+
+    msgs = build_messages_with_reasoning(req.messages, req.show_thinking, req.uncensored, web_context)
     ollama_ok = await check_ollama()
     llamacpp_url = await resolve_llamacpp_url()
     llamacpp_ok = llamacpp_url is not None
 
     if req.stream:
+        search_info = {"searched": not req.uncensored, "has_results": bool(web_context)}
         if llamacpp_ok:
             return StreamingResponse(
-                stream_llamacpp(actual_model, msgs, req.show_thinking, llamacpp_url),
+                stream_llamacpp(actual_model, msgs, req.show_thinking, llamacpp_url, search_info),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
             )
         elif ollama_ok:
             return StreamingResponse(
-                stream_ollama(actual_model, msgs, req.show_thinking),
+                stream_ollama(actual_model, msgs, req.show_thinking, search_info),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
             )
         else:
             return StreamingResponse(
-                stream_hf_with_fallback(msgs, req.show_thinking),
+                stream_hf_with_fallback(msgs, req.show_thinking, search_info),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
             )
     else:
+        search_info = {"searched": not req.uncensored, "has_results": bool(web_context)}
         if llamacpp_ok:
             try:
                 is_tunnel = llamacpp_url != LLAMA_CPP_HOST
@@ -346,7 +439,7 @@ async def chat(req: ChatRequest):
                         content = data["choices"][0]["message"]["content"]
                         thinking, response_text = parse_thinking(content)
                         image_url = await maybe_generate_image(response_text)
-                        resp = {"message": response_text, "thinking": thinking}
+                        resp = {"message": response_text, "thinking": thinking, "search_status": search_info}
                         if image_url:
                             resp["image_url"] = image_url
                         return resp
@@ -360,7 +453,7 @@ async def chat(req: ChatRequest):
                     content = data["message"]["content"]
                     thinking, response_text = parse_thinking(content)
                     image_url = await maybe_generate_image(response_text)
-                    resp = {"message": response_text, "thinking": thinking}
+                    resp = {"message": response_text, "thinking": thinking, "search_status": search_info}
                     if image_url:
                         resp["image_url"] = image_url
                     return resp
@@ -384,7 +477,7 @@ async def chat(req: ChatRequest):
                                 content = data["choices"][0]["message"]["content"]
                                 thinking, response_text = parse_thinking(content)
                                 image_url = await maybe_generate_image(response_text)
-                                resp = {"message": response_text, "thinking": thinking}
+                                resp = {"message": response_text, "thinking": thinking, "search_status": search_info}
                                 if image_url:
                                     resp["image_url"] = image_url
                                 return resp
@@ -408,13 +501,15 @@ async def chat(req: ChatRequest):
                     else:
                         content = data.get("generated_text", str(data))
                     thinking, response_text = parse_thinking(content)
-                    return {"message": response_text, "thinking": thinking}
+                    return {"message": response_text, "thinking": thinking, "search_status": search_info}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
-async def stream_llamacpp(model: str, messages: list, show_thinking: bool = False, base_url: str = ""):
+async def stream_llamacpp(model: str, messages: list, show_thinking: bool = False, base_url: str = "", search_info: dict = None):
     url = base_url or LLAMA_CPP_HOST
     is_tunnel = url != LLAMA_CPP_HOST
+    if search_info:
+        yield f"data: {json.dumps({'search_status': search_info})}\n\n"
     try:
         if is_tunnel:
             async with httpx.AsyncClient(timeout=300) as c:
@@ -487,7 +582,9 @@ async def stream_llamacpp(model: str, messages: list, show_thinking: bool = Fals
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
 
-async def stream_ollama(model: str, messages: list, show_thinking: bool = False):
+async def stream_ollama(model: str, messages: list, show_thinking: bool = False, search_info: dict = None):
+    if search_info:
+        yield f"data: {json.dumps({'search_status': search_info})}\n\n"
     try:
         async with httpx.AsyncClient(timeout=300) as c:
             async with c.stream("POST", f"{OLLAMA_HOST}/api/chat", json={"model": model, "messages": messages, "stream": True}, timeout=300) as response:
@@ -529,14 +626,16 @@ async def stream_ollama(model: str, messages: list, show_thinking: bool = False)
                                         yield f"data: {json.dumps({'content': buffer})}\n\n"
                                     yield f"data: {json.dumps({'done': True})}\n\n"
                                     return
-                            except json.JSONDecodeError:
-                                continue
+                        except json.JSONDecodeError:
+                            continue
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
         yield f"data: {json.dumps({'done': True})}\n\n"
 
-async def stream_hf_with_fallback(messages: list, show_thinking: bool = False):
+async def stream_hf_with_fallback(messages: list, show_thinking: bool = False, search_info: dict = None):
     """Try Groq first (fast, free), then HF inference models as fallback"""
+    if search_info:
+        yield f"data: {json.dumps({'search_status': search_info})}\n\n"
     # Try Groq (fastest free inference)
     try:
         async for chunk in stream_groq(messages, show_thinking):

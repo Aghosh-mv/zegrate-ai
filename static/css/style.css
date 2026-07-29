@@ -1132,6 +1132,26 @@ body {
   white-space: pre-wrap;
 }
 
+.search-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  font-size: 13px;
+  color: var(--accent);
+  animation: pulse-search 1.5s ease-in-out infinite;
+}
+.search-icon {
+  font-size: 14px;
+}
+@keyframes pulse-search {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .connect-status {
   font-size: 11px;
   margin-left: 8px;

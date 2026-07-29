@@ -418,6 +418,15 @@
               const data = JSON.parse(trimmed.slice(6));
               if (data.error) { contentDiv.innerHTML = '<p style="color:var(--danger)">Error: ' + escapeHtml(data.error) + '</p>'; assistMsg.content += '\n[Error: ' + data.error + ']'; done = true; break; }
               if (data.done) { done = true; break; }
+              if (data.search_status) {
+                const ss = data.search_status;
+                const indicator = document.createElement('div');
+                indicator.className = 'search-indicator';
+                indicator.innerHTML = '<span class="search-icon">🔍</span> ' + (ss.has_results ? 'Searching the web...' : 'Thinking...');
+                contentDiv.innerHTML = '';
+                contentDiv.appendChild(indicator);
+                scrollToBottom();
+              }
               if (data.thinking) {
                 assistMsg.thinking += data.thinking;
                 const thinkEl = document.getElementById('think-' + assistMsg.id);
