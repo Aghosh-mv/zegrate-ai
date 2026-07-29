@@ -18,8 +18,10 @@
     audioChunks: [],
     showThinking: localStorage.getItem('zg-thinking') === 'true',
     uncensored: localStorage.getItem('zg-uncensored') === 'true',
+    customPrompt: localStorage.getItem('zg-custom-prompt') || '',
     localUrl: localStorage.getItem('zg-local-url') || '',
     usingLocal: false,
+    uploadedFile: null,
   };
 
   const $ = (s) => document.querySelector(s);
@@ -48,6 +50,10 @@
     el.connectBtn         = $('#connectBtn');
     el.connectStatus      = $('#connectStatus');
     el.settingsBtn        = $('#settingsBtn');
+    el.customPromptInput  = $('#customPromptInput');
+    el.fileUploadBtn      = $('#fileUploadBtn');
+    el.codePlaygroundBtn  = $('#codePlaygroundBtn');
+    el.deepResearchBtn    = $('#deepResearchBtn');
   }
 
   /* ============================================================
@@ -366,7 +372,7 @@
       const res = await fetch(apiBase() + '/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking, uncensored: state.uncensored }),
+        body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: true, show_thinking: state.showThinking, uncensored: state.uncensored, custom_prompt: state.customPrompt }),
       });
       if (!res.ok) {
         let errMsg = 'HTTP ' + res.status;
@@ -425,6 +431,9 @@
                 indicator.innerHTML = '<span class="search-icon">🔍</span> ' + (ss.has_results ? 'Searching the web...' : 'Thinking...');
                 contentDiv.innerHTML = '';
                 contentDiv.appendChild(indicator);
+                if (ss.sources && ss.sources.length > 0) {
+                  assistMsg.sources = ss.sources;
+                }
                 scrollToBottom();
               }
               if (data.thinking) {
@@ -444,15 +453,28 @@
         const fbRes = await fetch(apiBase() + '/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: false, show_thinking: state.showThinking, uncensored: state.uncensored }),
+          body: JSON.stringify({ model: state.selectedModel, messages: messagesForAPI, stream: false, show_thinking: state.showThinking, uncensored: state.uncensored, custom_prompt: state.customPrompt }),
         });
         if (fbRes.ok) {
           const fbData = await fbRes.json();
           assistMsg.content = fbData.message || fbData.choices?.[0]?.message?.content || '';
           if (fbData.thinking) assistMsg.thinking = fbData.thinking;
+          if (fbData.search_status && fbData.search_status.sources) assistMsg.sources = fbData.search_status.sources;
         }
       }
       contentDiv.innerHTML = formatContent(assistMsg.content);
+      if (assistMsg.sources && assistMsg.sources.length > 0) {
+        const sourcesPanel = document.createElement('div');
+        sourcesPanel.className = 'sources-panel';
+        sourcesPanel.innerHTML = '<div class="sources-label">Sources</div>';
+        assistMsg.sources.forEach((s, i) => {
+          const item = document.createElement('div');
+          item.className = 'source-item';
+          item.innerHTML = '<span class="source-num">' + (i + 1) + '</span><a class="source-link" href="' + escapeHtml(s.url) + '" target="_blank" rel="noopener">' + escapeHtml(s.title) + '</a>';
+          sourcesPanel.appendChild(item);
+        });
+        contentDiv.appendChild(sourcesPanel);
+      }
       if (assistMsg.thinking && state.showThinking) {
         const thinkEl = document.getElementById('think-' + assistMsg.id);
         if (thinkEl) {
@@ -916,6 +938,156 @@
   }
 
   /* ============================================================
+     CUSTOM PROMPT
+     ============================================================ */
+  function initCustomPrompt() {
+    el.customPromptInput.value = state.customPrompt;
+    $('#savePromptBtn').addEventListener('click', () => {
+      state.customPrompt = el.customPromptInput.value.trim();
+      localStorage.setItem('zg-custom-prompt', state.customPrompt);
+      toast(state.customPrompt ? 'Custom prompt saved' : 'Reset to default');
+    });
+    $('#clearPromptBtn').addEventListener('click', () => {
+      state.customPrompt = '';
+      el.customPromptInput.value = '';
+      localStorage.removeItem('zg-custom-prompt');
+      toast('Reset to default');
+    });
+  }
+
+  /* ============================================================
+     FILE UPLOAD
+     ============================================================ */
+  function setupFileUpload() {
+    const dropZone = $('#fileDropZone');
+    const fileInput = $('#fileInput');
+    el.fileUploadBtn.addEventListener('click', () => $('#fileModal').style.display = 'flex');
+    window.closeFileModal = () => { $('#fileModal').style.display = 'none'; state.uploadedFile = null; };
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+    $('#removeFileBtn').addEventListener('click', () => {
+      state.uploadedFile = null;
+      $('#filePreview').style.display = 'none';
+      $('#fileDropZone').style.display = '';
+      $('#analyzeFileBtn').disabled = true;
+    });
+
+    $('#analyzeFileBtn').addEventListener('click', async () => {
+      if (!state.uploadedFile || !state.currentConvId) return;
+      closeFileModal();
+      const file = state.uploadedFile;
+      el.messageInput.value = 'Analyze this file: ' + file.name;
+      el.messageInput.dispatchEvent(new Event('input'));
+      sendMessage();
+    });
+  }
+
+  function handleFile(file) {
+    if (file.size > 50000) { toast('File too large (max 50KB)'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      state.uploadedFile = { name: file.name, content: reader.result, type: file.type };
+      $('#fileName').textContent = file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+      $('#fileContentPreview').textContent = reader.result.substring(0, 2000);
+      $('#filePreview').style.display = '';
+      $('#fileDropZone').style.display = 'none';
+      $('#analyzeFileBtn').disabled = false;
+    };
+    reader.readAsText(file);
+  }
+
+  /* ============================================================
+     CODE PLAYGROUND
+     ============================================================ */
+  function setupPlayground() {
+    el.codePlaygroundBtn.addEventListener('click', () => $('#playgroundModal').style.display = 'flex');
+    window.closePlayground = () => { $('#playgroundModal').style.display = 'none'; };
+
+    $('#runCodeBtn').addEventListener('click', runPlaygroundCode);
+
+    $('#playgroundEditor').addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const s = e.target.selectionStart;
+        e.target.value = e.target.value.substring(0, s) + '  ' + e.target.value.substring(e.target.selectionEnd);
+        e.target.selectionStart = e.target.selectionEnd = s + 2;
+      }
+    });
+  }
+
+  async function runPlaygroundCode() {
+    const lang = $('#playgroundLang').value;
+    const code = $('#playgroundEditor').value;
+    const output = $('#playgroundOutput');
+    output.innerHTML = '';
+
+    if (lang === 'html') {
+      const iframe = document.createElement('iframe');
+      output.appendChild(iframe);
+      iframe.contentDocument.open();
+      iframe.contentDocument.write(code);
+      iframe.contentDocument.close();
+      return;
+    }
+
+    if (lang === 'javascript') {
+      const logs = [];
+      const mockConsole = { log: (...a) => logs.push(a.map(String).join(' ')), error: (...a) => logs.push('ERROR: ' + a.map(String).join(' ')), warn: (...a) => logs.push('WARN: ' + a.map(String).join(' ')) };
+      try {
+        const fn = new Function('console', code);
+        const result = fn(mockConsole);
+        if (result !== undefined) logs.push(String(result));
+        output.textContent = logs.join('\n') || '(no output)';
+      } catch (e) {
+        output.textContent = 'Error: ' + e.message;
+      }
+      return;
+    }
+
+    if (lang === 'python') {
+      output.textContent = 'Loading Python runtime...';
+      try {
+        if (!window.loadPyodide) {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js';
+          document.head.appendChild(s);
+          await new Promise((r, e) => { s.onload = r; s.onerror = e; });
+        }
+        if (!window._pyodide) {
+          window._pyodide = await loadPyodide({ stdout: (t) => { output.textContent += t; }, stderr: (t) => { output.textContent += 'ERROR: ' + t; } });
+        }
+        output.textContent = '';
+        await window._pyodide.runPythonAsync(code);
+      } catch (e) {
+        output.textContent = 'Error: ' + e.message;
+      }
+    }
+  }
+
+  /* ============================================================
+     DEEP RESEARCH
+     ============================================================ */
+  function setupDeepResearch() {
+    el.deepResearchBtn.addEventListener('click', () => $('#researchModal').style.display = 'flex');
+    window.closeResearch = () => { $('#researchModal').style.display = 'none'; };
+    $('#startResearchBtn').addEventListener('click', startDeepResearch);
+  }
+
+  async function startDeepResearch() {
+    const query = $('#researchQuery').value.trim();
+    if (!query || !state.currentConvId) return;
+    closeResearch();
+    el.messageInput.value = 'Deep research: ' + query;
+    el.messageInput.dispatchEvent(new Event('input'));
+    sendMessage();
+  }
+
+  /* ============================================================
      TOAST
      ============================================================ */
   function toast(msg) {
@@ -944,9 +1116,13 @@
     loadTheme();
     initThinking();
     initUncensored();
+    initCustomPrompt();
     setupSidebarTabs();
     setupChatSearch();
     setupVoice();
+    setupFileUpload();
+    setupPlayground();
+    setupDeepResearch();
 
     el.newChatBtn.addEventListener('click', startNewChat);
     el.sidebarToggle.addEventListener('click', () => {

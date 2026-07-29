@@ -123,6 +123,7 @@ class ChatRequest(BaseModel):
     stream: bool = True
     show_thinking: bool = False
     uncensored: bool = False
+    custom_prompt: str = ""
 
 class AddMessagesRequest(BaseModel):
     messages: List[Dict[str, str]]
@@ -142,10 +143,10 @@ def map_model(name: str) -> str:
         return "qwen2.5-14b-instruct"
     return name
 
-async def web_search(query: str, num_results: int = 5) -> str:
-    """Search the web via SerpAPI and return formatted context"""
+async def web_search(query: str, num_results: int = 5) -> tuple:
+    """Search the web via SerpAPI and return (context_string, sources_list)"""
     if not SERPAPI_KEY:
-        return ""
+        return "", []
     try:
         async with httpx.AsyncClient(timeout=10) as c:
             r = await c.get("https://serpapi.com/search.json", params={
@@ -156,23 +157,25 @@ async def web_search(query: str, num_results: int = 5) -> str:
                 "hl": "en",
             })
             if r.status_code != 200:
-                return ""
+                return "", []
             data = r.json()
             results = data.get("organic_results", [])
             if not results:
-                return ""
+                return "", []
             parts = []
+            sources = []
             for i, res in enumerate(results[:num_results], 1):
                 title = res.get("title", "")
                 snippet = res.get("snippet", "")
                 link = res.get("link", "")
                 if title and snippet:
                     parts.append(f"[{i}] {title}\n    {snippet}\n    Source: {link}")
+                    sources.append({"title": title, "url": link, "snippet": snippet})
             if not parts:
-                return ""
-            return "\n\n".join(parts)
+                return "", []
+            return "\n\n".join(parts), sources
     except Exception:
-        return ""
+        return "", []
 
 
 def needs_web_search(query: str) -> bool:
@@ -226,8 +229,11 @@ async def maybe_generate_image(text: str) -> Optional[str]:
             pass
     return None
 
-def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False, uncensored: bool = False, web_context: str = "") -> List[Dict[str, str]]:
-    persona = UNCENSORED_PERSONA if uncensored else DEFAULT_PERSONA
+def build_messages_with_reasoning(msgs: List[Dict[str, str]], show_thinking: bool = False, uncensored: bool = False, web_context: str = "", custom_prompt: str = "") -> List[Dict[str, str]]:
+    if custom_prompt and not uncensored:
+        persona = {"role": "system", "content": custom_prompt}
+    else:
+        persona = UNCENSORED_PERSONA if uncensored else DEFAULT_PERSONA
     result = [persona]
     if show_thinking:
         result.append(THINK_PROMPT)
@@ -384,6 +390,7 @@ async def chat(req: ChatRequest):
 
     # Web search before responding (skip for uncensored mode)
     web_context = ""
+    sources = []
     if not req.uncensored:
         last_user_msg = ""
         for m in reversed(req.messages):
@@ -391,15 +398,15 @@ async def chat(req: ChatRequest):
                 last_user_msg = m.get("content", "")
                 break
         if last_user_msg and needs_web_search(last_user_msg):
-            web_context = await web_search(last_user_msg)
+            web_context, sources = await web_search(last_user_msg)
 
-    msgs = build_messages_with_reasoning(req.messages, req.show_thinking, req.uncensored, web_context)
+    msgs = build_messages_with_reasoning(req.messages, req.show_thinking, req.uncensored, web_context, req.custom_prompt)
     ollama_ok = await check_ollama()
     llamacpp_url = await resolve_llamacpp_url()
     llamacpp_ok = llamacpp_url is not None
 
     if req.stream:
-        search_info = {"searched": not req.uncensored, "has_results": bool(web_context)}
+        search_info = {"searched": not req.uncensored, "has_results": bool(web_context), "sources": sources}
         if llamacpp_ok:
             return StreamingResponse(
                 stream_llamacpp(actual_model, msgs, req.show_thinking, llamacpp_url, search_info),
@@ -419,7 +426,7 @@ async def chat(req: ChatRequest):
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
             )
     else:
-        search_info = {"searched": not req.uncensored, "has_results": bool(web_context)}
+        search_info = {"searched": not req.uncensored, "has_results": bool(web_context), "sources": sources}
         if llamacpp_ok:
             try:
                 is_tunnel = llamacpp_url != LLAMA_CPP_HOST
@@ -901,6 +908,11 @@ class ImageGenRequest(BaseModel):
     height: int = 512
     style: str = "default"
 
+class FileUploadRequest(BaseModel):
+    filename: str
+    content: str
+    mime_type: str = ""
+
 @app.post("/api/generate-image")
 async def generate_image(req: ImageGenRequest):
     """Proxy to Pollinations.ai for free image generation"""
@@ -928,6 +940,31 @@ async def generate_image(req: ImageGenRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/analyze-file")
+async def analyze_file(req: FileUploadRequest):
+    """Analyze an uploaded file using AI"""
+    content_preview = req.content[:8000]
+    ext = req.filename.rsplit(".", 1)[-1].lower() if "." in req.filename else ""
+    type_hint = ""
+    if ext in ("py", "js", "ts", "java", "c", "cpp", "go", "rs", "rb", "php"):
+        type_hint = f"\nThis is a {ext.upper()} source code file."
+    elif ext in ("json",):
+        type_hint = "\nThis is a JSON data file."
+    elif ext in ("md", "txt"):
+        type_hint = "\nThis is a text document."
+    elif ext in ("html", "css"):
+        type_hint = "\nThis is a web markup file."
+
+    prompt = (
+        f"Analyze this file ({req.filename}) and provide:\n"
+        f"1. A brief summary of what it does\n"
+        f"2. Key components/functions\n"
+        f"3. Any issues or improvements\n"
+        f"{type_hint}\n\n"
+        f"File content:\n```\n{content_preview}\n```"
+    )
+    return {"prompt": prompt, "filename": req.filename, "preview": content_preview[:500]}
 
 @app.post("/api/tts")
 async def text_to_speech(req: TTSRequest):

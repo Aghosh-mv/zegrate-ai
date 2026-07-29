@@ -50,6 +50,15 @@
               </label>
             </div>
           </div>
+          <div class="settings-section">
+            <div class="settings-heading">Custom System Prompt</div>
+            <p class="settings-hint">Override the default AI personality. Leave empty for default behavior.</p>
+            <textarea id="customPromptInput" class="custom-prompt-input" placeholder="You are a helpful coding assistant specializing in Python..." rows="4"></textarea>
+            <div class="settings-actions">
+              <button id="savePromptBtn" class="small-btn primary">Save Prompt</button>
+              <button id="clearPromptBtn" class="small-btn">Reset to Default</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -92,6 +101,20 @@
       </div>
 
       <div class="input-area">
+        <div class="input-tools">
+          <button id="fileUploadBtn" class="tool-btn" title="Upload file for analysis">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+            <span>File</span>
+          </button>
+          <button id="codePlaygroundBtn" class="tool-btn" title="Code Playground - run code in browser">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <span>Playground</span>
+          </button>
+          <button id="deepResearchBtn" class="tool-btn" title="Deep Research - multi-query synthesis">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>Research</span>
+          </button>
+        </div>
         <div class="input-wrapper">
           <textarea id="messageInput" placeholder="Message Zegrate..." rows="1" disabled></textarea>
           <button id="voiceBtn" class="voice-btn" title="Voice input" disabled>
@@ -128,6 +151,86 @@
       <div class="modal-footer">
         <button class="small-btn" onclick="closeConnectModal()">Cancel</button>
         <button id="saveConnectBtn" class="small-btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- File Upload Modal -->
+  <div id="fileModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:520px">
+      <div class="modal-header">
+        <h2>Upload File for Analysis</h2>
+        <button class="icon-btn modal-close" onclick="closeFileModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="fileDropZone" class="file-drop-zone">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:40px;height:40px;opacity:0.4"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+          <p>Drop a file here or <label for="fileInput" style="color:var(--accent);cursor:pointer">browse</label></p>
+          <p style="font-size:12px;opacity:0.5;margin-top:4px">Supports code, text, JSON, Markdown (max 50KB)</p>
+          <input type="file" id="fileInput" style="display:none" accept=".py,.js,.ts,.java,.c,.cpp,.go,.rs,.rb,.php,.json,.md,.txt,.html,.css,.yaml,.yml,.toml,.sh,.sql,.xml,.csv">
+        </div>
+        <div id="filePreview" style="display:none;margin-top:12px">
+          <div class="file-info">
+            <span id="fileName" class="file-name"></span>
+            <button id="removeFileBtn" class="small-btn">Remove</button>
+          </div>
+          <pre id="fileContentPreview" class="file-content-preview"></pre>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="small-btn" onclick="closeFileModal()">Cancel</button>
+        <button id="analyzeFileBtn" class="small-btn primary" disabled>Analyze File</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Code Playground Modal -->
+  <div id="playgroundModal" class="modal" style="display:none">
+    <div class="modal-content playground-content">
+      <div class="modal-header">
+        <h2>Code Playground</h2>
+        <button class="icon-btn modal-close" onclick="closePlayground()">&times;</button>
+      </div>
+      <div class="playground-body">
+        <div class="playground-toolbar">
+          <select id="playgroundLang" class="modal-input" style="width:auto">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python (via Pyodide)</option>
+            <option value="html">HTML/CSS</option>
+          </select>
+          <button id="runCodeBtn" class="small-btn primary">Run Code</button>
+        </div>
+        <div class="playground-panels">
+          <div class="playground-editor-wrap">
+            <div class="playground-label">Editor</div>
+            <textarea id="playgroundEditor" class="playground-editor" spellcheck="false" placeholder="// Write your code here..."></textarea>
+          </div>
+          <div class="playground-output-wrap">
+            <div class="playground-label">Output</div>
+            <div id="playgroundOutput" class="playground-output"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deep Research Modal -->
+  <div id="researchModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:600px">
+      <div class="modal-header">
+        <h2>Deep Research</h2>
+        <button class="icon-btn modal-close" onclick="closeResearch()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;opacity:0.7;margin-bottom:12px">Multi-query search: AI generates sub-questions, searches each, and synthesizes a comprehensive answer.</p>
+        <input type="text" id="researchQuery" class="modal-input" placeholder="What do you want to research deeply?">
+        <div id="researchProgress" style="display:none;margin-top:16px">
+          <div class="research-steps" id="researchSteps"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="small-btn" onclick="closeResearch()">Cancel</button>
+        <button id="startResearchBtn" class="small-btn primary">Start Research</button>
       </div>
     </div>
   </div>
