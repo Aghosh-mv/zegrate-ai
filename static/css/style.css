@@ -1889,3 +1889,227 @@ body {
   font-size: 14px;
   flex-shrink: 0;
 }
+
+/* ============================================================
+   WELCOME SCREEN
+   ============================================================ */
+.welcome-logo {
+  margin-bottom: 16px;
+}
+.welcome-icon.animated-logo {
+  width: 72px;
+  height: 72px;
+  font-size: 36px;
+  border-radius: 20px;
+  animation: logoFloat 3s ease-in-out infinite;
+}
+@keyframes logoFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.welcome-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--accent), #a855f7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.welcome-features {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.welcome-feature {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.welcome-feature svg {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+.hint-chip {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.hint-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+}
+
+/* ============================================================
+   HEADER ACTIONS
+   ============================================================ */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ============================================================
+   FOLDER TABS
+   ============================================================ */
+.folder-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px 12px 8px;
+  overflow-x: auto;
+}
+.folder-tab {
+  padding: 4px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--input-border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.folder-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.folder-tab:hover:not(.active) {
+  background: var(--hover);
+}
+
+/* ============================================================
+   MOBILE BOTTOM NAV
+   ============================================================ */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  background: var(--sidebar-bg);
+  border-top: 1px solid var(--sidebar-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 100;
+  padding: 0 8px;
+}
+@media (max-width: 768px) {
+  .mobile-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+  }
+  .input-area {
+    padding-bottom: 60px;
+  }
+  .main-area {
+    height: calc(100vh - 56px);
+  }
+}
+.mobile-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.mobile-nav-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.mobile-nav-btn.active {
+  color: var(--accent);
+}
+
+/* ============================================================
+   PIN & FOLDER BADGES
+   ============================================================ */
+.conv-pin {
+  font-size: 10px;
+  margin-right: 4px;
+  opacity: 0.6;
+}
+.conv-folder-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  margin-left: 6px;
+  opacity: 0.7;
+}
+.conv-actions {
+  display: none;
+  gap: 2px;
+  margin-left: auto;
+}
+.conv-item:hover .conv-actions {
+  display: flex;
+}
+.conv-action-btn {
+  padding: 2px 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.conv-action-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+.message {
+  animation: msgSlideIn 0.2s ease-out;
+}
+@keyframes msgSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.typing-dot {
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px); }
+}
+
+/* ============================================================
+   EXPORT / SHARE MODAL
+   ============================================================ */
+.share-url-box {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.share-url-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--code-bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: monospace;
+}

@@ -34,6 +34,7 @@ if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 conversations: Dict[str, List[dict]] = {}
+conv_meta: Dict[str, dict] = {}
 todos: List[dict] = []
 apps: List[dict] = []
 todo_id_counter = 0
@@ -793,10 +794,11 @@ async def stream_hf_single(url: str, messages: list, show_thinking: bool = False
 async def create_conversation():
     conv_id = str(uuid.uuid4())
     conversations[conv_id] = []
+    conv_meta[conv_id] = {"folder": "", "pinned": False, "created_at": datetime.now().isoformat()}
     return {"id": conv_id, "title": "New Chat"}
 
 @app.get("/api/conversations")
-async def list_conversations(search: Optional[str] = Query(None)):
+async def list_conversations(search: Optional[str] = Query(None), folder: Optional[str] = Query(None)):
     result = []
     for cid, msgs in list(conversations.items()):
         title = "New Chat"
@@ -805,12 +807,27 @@ async def list_conversations(search: Optional[str] = Query(None)):
                 content = m.get("content", "")
                 title = content[:60] + ("..." if len(content) > 60 else "")
                 break
-        if search:
-            if search.lower() not in title.lower():
-                continue
-        result.append({"id": cid, "title": title, "message_count": len(msgs)})
-    result.sort(key=lambda x: x["message_count"], reverse=True)
+        meta = conv_meta.get(cid, {})
+        if search and search.lower() not in title.lower():
+            continue
+        if folder is not None and meta.get("folder", "") != folder:
+            continue
+        result.append({
+            "id": cid, "title": title, "message_count": len(msgs),
+            "folder": meta.get("folder", ""), "pinned": meta.get("pinned", False),
+            "created_at": meta.get("created_at", "")
+        })
+    result.sort(key=lambda x: (x["pinned"], x["message_count"]), reverse=True)
     return {"conversations": result}
+
+@app.put("/api/conversations/{conv_id}/meta")
+async def update_conversation_meta(conv_id: str, meta_update: dict):
+    if conv_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conv_id not in conv_meta:
+        conv_meta[conv_id] = {"folder": "", "pinned": False, "created_at": datetime.now().isoformat()}
+    conv_meta[conv_id].update(meta_update)
+    return {"ok": True, "meta": conv_meta[conv_id]}
 
 @app.get("/api/conversations/{conv_id}")
 async def get_conversation(conv_id: str):
@@ -836,6 +853,88 @@ async def add_messages(conv_id: str, req: AddMessagesRequest):
 async def delete_conversation(conv_id: str):
     conversations.pop(conv_id, None)
     return {"ok": True}
+
+@app.get("/api/conversations/{conv_id}/export")
+async def export_conversation(conv_id: str, format: str = "markdown"):
+    if conv_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    msgs = conversations[conv_id]
+    title = "Chat"
+    for m in msgs:
+        if m.get("role") == "user":
+            title = m.get("content", "")[:60]
+            break
+
+    if format == "markdown":
+        lines = [f"# {title}\n"]
+        for m in msgs:
+            role = m.get("role", "user")
+            content = m.get("content", "")
+            if role == "user":
+                lines.append(f"## You\n{content}\n")
+            else:
+                lines.append(f"## Zegrate AI\n{content}\n")
+        md = "\n".join(lines)
+        return StreamingResponse(
+            iter([md.encode()]),
+            media_type="text/markdown",
+            headers={"Content-Disposition": f"attachment; filename=\"{title[:30]}.md\""}
+        )
+    elif format == "json":
+        data = {"title": title, "messages": msgs, "exported_at": datetime.now().isoformat()}
+        return StreamingResponse(
+            iter([json.dumps(data, indent=2).encode()]),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename=\"{title[:30]}.json\""}
+        )
+
+share_links: Dict[str, str] = {}
+
+@app.post("/api/conversations/{conv_id}/share")
+async def share_conversation(conv_id: str):
+    if conv_id not in conversations:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    share_id = uuid.uuid4().hex[:12]
+    share_links[share_id] = conv_id
+    return {"share_id": share_id, "url": f"/shared/{share_id}"}
+
+@app.get("/api/shared/{share_id}")
+async def get_shared(share_id: str):
+    if share_id not in share_links:
+        raise HTTPException(status_code=404, detail="Shared conversation not found")
+    conv_id = share_links[share_id]
+    if conv_id not in conversations:
+        raise HTTPException(status_code=404, detail="Original conversation deleted")
+    msgs = conversations[conv_id]
+    title = "Shared Chat"
+    for m in msgs:
+        if m.get("role") == "user":
+            title = m.get("content", "")[:60]
+            break
+    return {"title": title, "messages": msgs}
+
+# API Key management (for future model access)
+api_keys: Dict[str, dict] = {}
+
+class APIKeyRequest(BaseModel):
+    name: str = "default"
+
+@app.post("/api/keys")
+async def create_api_key(req: APIKeyRequest):
+    key = "zg_" + uuid.uuid4().hex
+    api_keys[key] = {"name": req.name, "created": datetime.now().isoformat(), "requests": 0}
+    return {"key": key, "name": req.name}
+
+@app.get("/api/keys")
+async def list_api_keys():
+    return {"keys": [{"key": k[:8] + "...", "name": v["name"], "created": v["created"], "requests": v["requests"]} for k, v in api_keys.items()]}
+
+@app.delete("/api/keys/{key_prefix}")
+async def delete_api_key(key_prefix: str):
+    to_delete = [k for k in api_keys if k.startswith(key_prefix)]
+    for k in to_delete:
+        del api_keys[k]
+    return {"ok": True, "deleted": len(to_delete)}
 
 @app.get("/api/todos")
 async def list_todos():

@@ -22,6 +22,7 @@
     localUrl: localStorage.getItem('zg-local-url') || '',
     usingLocal: false,
     uploadedFile: null,
+    currentFolder: '',
   };
 
   const $ = (s) => document.querySelector(s);
@@ -54,6 +55,9 @@
     el.fileUploadBtn      = $('#fileUploadBtn');
     el.codePlaygroundBtn  = $('#codePlaygroundBtn');
     el.deepResearchBtn    = $('#deepResearchBtn');
+    el.exportBtn          = $('#exportBtn');
+    el.shareBtn           = $('#shareBtn');
+    el.mobileNav          = $('#mobileNav');
   }
 
   /* ============================================================
@@ -197,9 +201,21 @@
      ============================================================ */
   async function loadConversations() {
     try {
-      const res = await api('/api/conversations');
-      const data = await res.json();
-      state.conversations = data.conversations || [];
+      let url = '/api/conversations';
+      const params = [];
+      if (state.currentFolder === 'pinned') {
+        // Handle pinned filter client-side
+      } else if (state.currentFolder) {
+        params.push('folder=' + encodeURIComponent(state.currentFolder));
+      }
+      if (params.length) url += '?' + params.join('&');
+      const res = await api(url);
+      let data = await res.json();
+      let convs = data.conversations || [];
+      if (state.currentFolder === 'pinned') {
+        convs = convs.filter(c => c.pinned);
+      }
+      state.conversations = convs;
     } catch (e) {
       state.conversations = [];
     }
@@ -216,16 +232,50 @@
     state.conversations.forEach((c) => {
       const div = document.createElement('div');
       div.className = 'conv-item' + (c.id === state.currentConvId ? ' active' : '');
-      div.textContent = c.title || 'New Chat';
-      const del = document.createElement('button');
-      del.className = 'conv-delete';
-      del.textContent = '\u00D7';
-      del.title = 'Delete conversation';
-      del.addEventListener('click', (e) => { e.stopPropagation(); deleteConversation(c.id); });
-      div.appendChild(del);
-      div.addEventListener('click', () => switchConversation(c.id));
+      let label = '';
+      if (c.pinned) label += '<span class="conv-pin">📌</span>';
+      label += escapeHtml(c.title || 'New Chat');
+      if (c.folder) label += '<span class="conv-folder-badge">' + escapeHtml(c.folder) + '</span>';
+      div.innerHTML = label + '<div class="conv-actions">' +
+        '<button class="conv-action-btn" data-action="pin" title="Pin">' + (c.pinned ? '📌' : '📍') + '</button>' +
+        '<button class="conv-action-btn" data-action="folder" title="Move to folder">📁</button>' +
+        '<button class="conv-action-btn" data-action="delete" title="Delete">✕</button>' +
+        '</div>';
+      div.addEventListener('click', (e) => {
+        if (e.target.closest('.conv-action-btn')) return;
+        switchConversation(c.id);
+      });
+      div.querySelector('[data-action="pin"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePin(c.id, !c.pinned);
+      });
+      div.querySelector('[data-action="folder"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        cycleFolder(c.id, c.folder);
+      });
+      div.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteConversation(c.id);
+      });
       el.conversationList.appendChild(div);
     });
+  }
+
+  async function togglePin(id, pinned) {
+    try {
+      await api('/api/conversations/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ pinned }) });
+      await loadConversations();
+    } catch (_) {}
+  }
+
+  async function cycleFolder(id, current) {
+    const folders = ['', 'work', 'personal', 'code'];
+    const idx = folders.indexOf(current);
+    const next = folders[(idx + 1) % folders.length];
+    try {
+      await api('/api/conversations/' + id + '/meta', { method: 'PUT', body: JSON.stringify({ folder: next }) });
+      await loadConversations();
+    } catch (_) {}
   }
 
   async function startNewChat() {
@@ -268,6 +318,8 @@
   function showChatView(hasMessages) {
     el.welcomeScreen.style.display = hasMessages ? 'none' : 'flex';
     el.chatMessages.style.display = hasMessages ? 'flex' : 'none';
+    el.exportBtn.style.display = hasMessages ? '' : 'none';
+    el.shareBtn.style.display = hasMessages ? '' : 'none';
   }
 
   /* ============================================================
@@ -1088,6 +1140,98 @@
   }
 
   /* ============================================================
+     EXPORT & SHARE
+     ============================================================ */
+  function setupExportShare() {
+    el.exportBtn.addEventListener('click', exportChat);
+    el.shareBtn.addEventListener('click', shareChat);
+  }
+
+  async function exportChat() {
+    if (!state.currentConvId) return;
+    try {
+      const res = await fetch(apiBase() + '/api/conversations/' + state.currentConvId + '/export?format=markdown');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'chat-export.md';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Chat exported as Markdown');
+    } catch (e) {
+      toast('Export failed');
+    }
+  }
+
+  async function shareChat() {
+    if (!state.currentConvId) return;
+    try {
+      const res = await api('/api/conversations/' + state.currentConvId + '/share', { method: 'POST' });
+      const data = await res.json();
+      const fullUrl = window.location.origin + data.url;
+      await navigator.clipboard.writeText(fullUrl);
+      toast('Share link copied to clipboard!');
+    } catch (e) {
+      toast('Share failed');
+    }
+  }
+
+  /* ============================================================
+     FOLDER FILTERING
+     ============================================================ */
+  function setupFolders() {
+    document.querySelectorAll('.folder-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.folder-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        state.currentFolder = tab.dataset.folder || '';
+        loadConversations();
+      });
+    });
+  }
+
+  /* ============================================================
+     MOBILE NAV
+     ============================================================ */
+  function setupMobileNav() {
+    if (!el.mobileNav) return;
+    el.mobileNav.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        el.mobileNav.querySelectorAll('.mobile-nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const panel = btn.dataset.panel;
+        if (panel === 'chats') {
+          state.sidebarOpen = true;
+          el.sidebar.classList.add('open');
+        } else if (panel === 'playground') {
+          $('#playgroundModal').style.display = 'flex';
+        } else if (panel === 'files') {
+          $('#fileModal').style.display = 'flex';
+        } else if (panel === 'settings') {
+          state.sidebarOpen = true;
+          el.sidebar.classList.add('open');
+          el.settingsBtn.click();
+        }
+      });
+    });
+  }
+
+  /* ============================================================
+     HINT CHIPS (data-msg)
+     ============================================================ */
+  function setupHintChips() {
+    document.querySelectorAll('.hint-chip[data-msg]').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (!state.currentConvId) return;
+        el.messageInput.value = chip.dataset.msg;
+        el.messageInput.dispatchEvent(new Event('input'));
+        el.messageInput.focus();
+      });
+    });
+  }
+
+  /* ============================================================
      TOAST
      ============================================================ */
   function toast(msg) {
@@ -1123,6 +1267,10 @@
     setupFileUpload();
     setupPlayground();
     setupDeepResearch();
+    setupExportShare();
+    setupFolders();
+    setupMobileNav();
+    setupHintChips();
 
     el.newChatBtn.addEventListener('click', startNewChat);
     el.sidebarToggle.addEventListener('click', () => {
@@ -1145,8 +1293,8 @@
     el.thinkingToggle.addEventListener('change', toggleThinking);
     el.uncensoredToggle.addEventListener('change', toggleUncensored);
 
-    // Hint chips
-    document.querySelectorAll('.hint-chip').forEach(chip => {
+    // Hint chips (legacy)
+    document.querySelectorAll('.hint-chip:not([data-msg])').forEach(chip => {
       chip.addEventListener('click', () => {
         if (!state.currentConvId) return;
         el.messageInput.value = chip.textContent.replace(/"/g, '');
