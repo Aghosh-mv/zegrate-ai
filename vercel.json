@@ -12,8 +12,12 @@
     }
   ],
   "routes": [
-    { "src": "/(status|api/.*)", "dest": "api/index.py" },
+    { "src": "/api/(.*)", "dest": "api/index.py" },
+    { "src": "/status", "dest": "/static/status.html" },
     { "src": "/static/(.*)", "dest": "/static/$1" },
     { "src": "/(.*)", "dest": "/static/index.html" }
+  ],
+  "headers": [
+    { "source": "/api/training-stream", "headers": [{"key": "Cache-Control", "value": "no-cache"}, {"key": "X-Accel-Buffering", "value": "no"}] }
   ]
 }

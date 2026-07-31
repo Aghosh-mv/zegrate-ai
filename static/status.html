@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zegrate Training - Live Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#e0e0e0;font-family:'SF Mono','Fira Code','Cascadia Code',monospace;min-height:100vh;overflow-x:hidden}
+.container{max-width:800px;margin:0 auto;padding:16px}
+.header{text-align:center;padding:20px 0;border-bottom:1px solid #1a1a2e;margin-bottom:20px}
+.header h1{font-size:24px;background:linear-gradient(135deg,#00d4ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+.header .sub{color:#666;font-size:12px}
+.live-badge{display:inline-flex;align-items:center;gap:6px;background:#1a0a0a;border:1px solid #ff3333;border-radius:12px;padding:3px 10px;font-size:11px;color:#ff4444}
+.live-dot{width:6px;height:6px;border-radius:50%;background:#ff3333;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.card{background:#111118;border:1px solid #1a1a2e;border-radius:12px;padding:16px;margin-bottom:12px}
+.card-title{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.big-number{font-size:48px;font-weight:700;line-height:1}
+.big-number.green{color:#00ff88}
+.big-number.blue{color:#00d4ff}
+.big-number.yellow{color:#ffaa00}
+.big-number.red{color:#ff4444}
+.arrow{display:inline-block;font-size:28px;margin-left:8px;animation:bounce 1s infinite}
+.arrow.up{color:#ff4444}
+.arrow.down{color:#00ff88}
+.arrow.flat{color:#666;animation:none}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.progress-bar{width:100%;height:24px;background:#1a1a2e;border-radius:12px;overflow:hidden;position:relative;margin:10px 0}
+.progress-fill{height:100%;background:linear-gradient(90deg,#7b2ff7,#00d4ff);border-radius:12px;transition:width 0.5s ease;position:relative}
+.progress-fill::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.1) 50%,transparent 100%);animation:shimmer 2s infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.progress-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:700;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.5)}
+.phase-bar{display:flex;gap:2px;margin:10px 0}
+.phase-seg{flex:1;height:8px;border-radius:4px;background:#1a1a2e;transition:background 0.3s}
+.phase-seg.done{background:#00ff88}
+.phase-seg.active{background:#00d4ff;animation:pulse 1s infinite}
+.phase-seg.future{background:#1a1a2e}
+.phase-labels{display:flex;justify-content:space-between;font-size:10px;color:#666}
+.metrics-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.metric{background:#0d0d14;border-radius:8px;padding:10px;text-align:center}
+.metric .label{font-size:10px;color:#666;margin-bottom:4px}
+.metric .value{font-size:20px;font-weight:700}
+.metric .value.green{color:#00ff88}
+.metric .value.blue{color:#00d4ff}
+.metric .value.yellow{color:#ffaa00}
+.metric .value.red{color:#ff4444}
+.event-log{max-height:200px;overflow-y:auto;font-size:11px}
+.event-log::-webkit-scrollbar{width:4px}
+.event-log::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.event{padding:6px 8px;border-left:2px solid #333;margin-bottom:4px;border-radius:0 4px 4px 0;background:#0d0d14}
+.event.outage{border-color:#ff4444;color:#ff6666}
+.event.restart{border-color:#ffaa00;color:#ffcc00}
+.event.step{border-color:#00d4ff;color:#88ccff}
+.event.boot{border-color:#00ff88;color:#00ff88}
+.feed{max-height:300px;overflow-y:auto;font-size:11px}
+.feed::-webkit-scrollbar{width:4px}
+.feed::-webkit-scrollbar-thumb{background:#333;border-radius:2px}
+.feed-item{padding:4px 8px;border-left:2px solid #00d4ff;margin-bottom:2px;border-radius:0 4px 4px 0;background:#0d0d14;display:flex;justify-content:space-between;animation:slideIn 0.3s ease}
+@keyframes slideIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:translateX(0)}}
+.feed-item .step-num{color:#00d4ff;font-weight:700}
+.feed-item .loss-val{color:#00ff88}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.on{background:#00ff88;box-shadow:0 0 6px #00ff88}
+.status-dot.off{background:#ff4444;box-shadow:0 0 6px #ff4444}
+.footer{text-align:center;padding:20px 0;color:#333;font-size:10px}
+@media(max-width:600px){.big-number{font-size:36px}.metrics-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Zegrate Training</h1>
+    <div class="sub">Phase 1: DoRA Fine-tuning &middot; Qwen 2.5 14B</div>
+  </div>
+
+  <!-- LIVE BADGE -->
+  <div style="text-align:center;margin-bottom:16px">
+    <span class="live-badge" id="liveBadge"><span class="live-dot"></span><span id="liveText">CONNECTING...</span></span>
+  </div>
+
+  <!-- MAIN STEP COUNTER -->
+  <div class="card" style="text-align:center">
+    <div class="card-title">Training Step</div>
+    <div>
+      <span class="big-number blue" id="stepNum">---</span>
+      <span class="arrow flat" id="stepArrow"></span>
+    </div>
+    <div style="font-size:14px;color:#666;margin-top:4px">/ 10,000</div>
+  </div>
+
+  <!-- PROGRESS BAR -->
+  <div class="card">
+    <div class="card-title">Total Progress</div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      <div class="progress-text" id="progressText">0%</div>
+    </div>
+  </div>
+
+  <!-- PHASE BAR -->
+  <div class="card">
+    <div class="card-title">Training Phase</div>
+    <div class="phase-bar" id="phaseBar">
+      <div class="phase-seg done"></div>
+      <div class="phase-seg done"></div>
+      <div class="phase-seg done"></div>
+      <div class="phase-seg done"></div>
+      <div class="phase-seg done"></div>
+      <div class="phase-seg done"></div>
+      <div class="phase-seg done"></div>
+      <div class="phase-seg active"></div>
+      <div class="phase-seg future"></div>
+      <div class="phase-seg future"></div>
+    </div>
+    <div class="phase-labels">
+      <span>Warmup</span>
+      <span>Phase 1 (25%)</span>
+      <span>Phase 2 (50%)</span>
+      <span>Phase 3 (75%)</span>
+      <span>Done</span>
+    </div>
+  </div>
+
+  <!-- LIVE STEP FEED -->
+  <div class="card">
+    <div class="card-title">Live Step Feed <span class="live-badge" style="font-size:9px;padding:1px 6px"><span class="live-dot"></span>LIVE</span></div>
+    <div class="feed" id="feed"></div>
+  </div>
+
+  <!-- METRICS -->
+  <div class="card">
+    <div class="card-title">Metrics</div>
+    <div class="metrics-grid">
+      <div class="metric">
+        <div class="label">LOSS</div>
+        <div class="value green" id="lossVal">---</div>
+      </div>
+      <div class="metric">
+        <div class="label">LOSS TREND</div>
+        <div class="value" id="lossTrend">---</div>
+      </div>
+      <div class="metric">
+        <div class="label">GPU TEMP</div>
+        <div class="value yellow" id="tempVal">---</div>
+      </div>
+      <div class="metric">
+        <div class="label">GPU MEMORY</div>
+        <div class="value blue" id="memVal">---</div>
+      </div>
+      <div class="metric">
+        <div class="label">EPOCH</div>
+        <div class="value" id="epochVal">---</div>
+      </div>
+      <div class="metric">
+        <div class="label">LEARNING RATE</div>
+        <div class="value" id="lrVal">---</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="card">
+    <div class="card-title">System Status</div>
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 0">
+      <span class="status-dot" id="trainDot"></span>
+      <span id="trainStatus">Checking...</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 0">
+      <span class="status-dot" id="watchdogDot"></span>
+      <span>Watchdog</span>
+    </div>
+  </div>
+
+  <!-- POWER / EVENTS -->
+  <div class="card">
+    <div class="card-title">Events &amp; Power Log</div>
+    <div class="event-log" id="eventLog">
+      <div class="event step">Connecting to training...</div>
+    </div>
+  </div>
+
+  <div class="footer">Zegrate AI &middot; Training Dashboard &middot; Auto-refreshes every 3s</div>
+</div>
+
+<script>
+const feed = document.getElementById('feed');
+const eventLog = document.getElementById('eventLog');
+let lastStep = 0;
+let stepsSeen = new Set();
+let evtSource;
+
+function connect() {
+  evtSource = new EventSource('/api/training-stream');
+  
+  evtSource.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.error) return;
+    
+    // Update live badge
+    document.getElementById('liveText').textContent = d.running ? 'LIVE' : 'STOPPED';
+    document.getElementById('liveBadge').style.borderColor = d.running ? '#00ff88' : '#ff4444';
+    document.getElementById('liveBadge').style.background = d.running ? '#0a1a0a' : '#1a0a0a';
+    
+    // Step counter
+    const stepEl = document.getElementById('stepNum');
+    const arrowEl = document.getElementById('stepArrow');
+    stepEl.textContent = d.step.toLocaleString();
+    
+    if (d.step > lastStep) {
+      arrowEl.textContent = '▲';
+      arrowEl.className = 'arrow up';
+    } else if (d.step < lastStep) {
+      arrowEl.textContent = '▼';
+      arrowEl.className = 'arrow down';
+    } else {
+      arrowEl.textContent = '—';
+      arrowEl.className = 'arrow flat';
+    }
+    lastStep = d.step;
+    
+    // Progress bar
+    const pct = d.pct || (d.step / 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressText').textContent = pct + '%';
+    
+    // Phase bar
+    const phases = document.querySelectorAll('.phase-seg');
+    const phaseIdx = Math.floor(pct / 10);
+    phases.forEach((p, i) => {
+      p.className = 'phase-seg ' + (i < phaseIdx ? 'done' : i === phaseIdx ? 'active' : 'future');
+    });
+    
+    // Live feed
+    if (d.step > 0 && !stepsSeen.has(d.step)) {
+      stepsSeen.add(d.step);
+      const item = document.createElement('div');
+      item.className = 'feed-item';
+      item.innerHTML = `<span class="step-num">Step ${d.step.toLocaleString()}</span><span class="loss-val">loss: ${d.loss.toFixed(4)}</span>`;
+      feed.insertBefore(item, feed.firstChild);
+      if (feed.children.length > 100) feed.removeChild(feed.lastChild);
+    }
+    
+    // Metrics
+    document.getElementById('lossVal').textContent = d.loss ? d.loss.toFixed(4) : '---';
+    
+    const trendEl = document.getElementById('lossTrend');
+    if (d.loss_trend === 'down') { trendEl.textContent = '▼ FAL'; trendEl.className = 'value green'; }
+    else if (d.loss_trend === 'up') { trendEl.textContent = '▲ RIS'; trendEl.className = 'value red'; }
+    else { trendEl.textContent = '— FLAT'; trendEl.className = 'value'; }
+    
+    document.getElementById('tempVal').textContent = d.temp ? d.temp + '°C' : '---';
+    document.getElementById('tempVal').className = 'value ' + (d.temp > 85 ? 'red' : d.temp > 70 ? 'yellow' : 'green');
+    
+    document.getElementById('memVal').textContent = d.gpu_mem ? (d.gpu_mem/1024).toFixed(1) + 'GB' : '---';
+    document.getElementById('epochVal').textContent = d.epoch ? d.epoch.toFixed(2) : '---';
+    document.getElementById('lrVal').textContent = d.lr ? d.lr.toExponential(1) : '---';
+    
+    // Status dots
+    document.getElementById('trainDot').className = 'status-dot ' + (d.running ? 'on' : 'off');
+    document.getElementById('trainStatus').textContent = d.running ? 'Training Active' : 'Training Stopped';
+    document.getElementById('watchdogDot').className = 'status-dot on';
+    
+    // Power events
+    if (d.power_events && d.power_events.length > 0) {
+      const logHtml = d.power_events.reverse().map(ev => {
+        const cls = ev.event === 'power_outage' ? 'outage' : ev.event === 'training_stopped' ? 'restart' : 'step';
+        const icon = ev.event === 'power_outage' ? '⚡' : ev.event === 'training_stopped' ? '🔄' : '📊';
+        const time = new Date(ev.time).toLocaleTimeString();
+        return `<div class="event ${cls}">${icon} ${ev.event.replace(/_/g,' ')} — ${time}</div>`;
+      }).join('');
+      eventLog.innerHTML = logHtml;
+    }
+  };
+  
+  evtSource.onerror = () => {
+    document.getElementById('liveText').textContent = 'RECONNECTING...';
+    document.getElementById('liveBadge').style.borderColor = '#ffaa00';
+    setTimeout(connect, 5000);
+  };
+}
+
+connect();
+</script>
+</body>
+</html>

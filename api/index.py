@@ -2,7 +2,7 @@ import os, json, uuid
 from datetime import datetime
 from typing import List, Dict, Optional
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -346,6 +346,76 @@ async def training_status():
         "note": "Real-time status available locally at http://localhost:8000/api/training-status",
         "ssh_command": "ssh tinkerspace@ubuntu.tail986ce4.ts.net 'bash ~/ollama-training/scripts/status_check.sh'"
     }
+
+@app.get("/api/training-stream")
+async def training_stream():
+    import subprocess, re, time
+    def event_generator():
+        last_step = -1
+        while True:
+            try:
+                log = subprocess.run(["tail", "-200", "/home/tinkerspace/ollama-training/outputs/train_phase1.log"], capture_output=True, text=True, timeout=5).stdout
+                events = subprocess.run(["tail", "-50", "/home/tinkerspace/ollama-training/outputs/events.jsonl"], capture_output=True, text=True, timeout=5).stdout
+                
+                # Parse latest metrics
+                steps = re.findall(r"(\d+)%.*?(\d+)/10000", log)
+                losses = re.findall(r"'loss': ([0-9.]+)", log)
+                epochs = re.findall(r"'epoch': ([0-9.]+)", log)
+                lrs = re.findall(r"'learning_rate': ([0-9.e\-]+)", log)
+                temps = re.findall(r"temperature\.gpu.*?(\d+)", log)
+                gpu_mems = re.findall(r"memory\.used.*?(\d+)", log)
+                
+                step = int(steps[-1][1]) if steps else 0
+                pct = int(steps[-1][0]) if steps else 0
+                loss = float(losses[-1]) if losses else 0
+                epoch = float(epochs[-1]) if epochs else 0
+                lr = float(lrs[-1]) if lrs else 0
+                temp = int(temps[-1]) if temps else 0
+                gpu_mem = int(gpu_mems[-1]) if gpu_mems else 0
+                
+                # Check if running
+                running = subprocess.run(["pgrep", "-f", "train_lora.py.*phase1"], capture_output=True, text=True).returncode == 0
+                
+                # Parse power events
+                power_events = []
+                for line in events.strip().split('\n'):
+                    if line.strip():
+                        try:
+                            evt = json.loads(line)
+                            if evt.get('event') in ('power_outage', 'training_stopped'):
+                                power_events.append(evt)
+                        except:
+                            pass
+                
+                # Compute loss trend
+                loss_trend = "stable"
+                if len(losses) >= 2:
+                    prev = float(losses[-2])
+                    curr = float(losses[-1])
+                    if curr < prev - 0.001:
+                        loss_trend = "down"
+                    elif curr > prev + 0.001:
+                        loss_trend = "up"
+                
+                data = {
+                    "step": step,
+                    "max_steps": 10000,
+                    "pct": pct,
+                    "loss": loss,
+                    "loss_trend": loss_trend,
+                    "epoch": epoch,
+                    "lr": lr,
+                    "temp": temp,
+                    "gpu_mem": gpu_mem,
+                    "running": running,
+                    "power_events": power_events[-5:],
+                    "time": time.time()
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            time.sleep(3)
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.get("/api/health")
 async def health():
