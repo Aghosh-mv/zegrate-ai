@@ -328,6 +328,34 @@ async def root():
             )
     return HTMLResponse("<h1>Zegrate AI</h1><p>Frontend not found</p>")
 
+@app.get("/status")
+async def status_page():
+    import subprocess
+    try:
+        result = subprocess.run(["bash", "/home/tinkerspace/ollama-training/scripts/status_check.sh"], capture_output=True, text=True, timeout=10)
+        return HTMLResponse(f"<pre>{result.stdout}</pre>", headers={"Cache-Control": "no-store"})
+    except:
+        return HTMLResponse("<pre>Status unavailable</pre>")
+
+@app.get("/api/training-status")
+async def training_status():
+    import subprocess, re
+    try:
+        log = subprocess.run(["tail", "-100", "/home/tinkerspace/ollama-training/outputs/train_phase1.log"], capture_output=True, text=True, timeout=5).stdout
+        step_match = re.findall(r"step: (\d+)", log)
+        loss_match = re.findall(r"loss: ([0-9.]+)", log)
+        gpu = subprocess.run(["nvidia-smi", "--query-gpu=memory.used,temperature.gpu,utilization.gpu", "--format=csv,noheader"], capture_output=True, text=True, timeout=5).stdout.strip()
+        running = subprocess.run(["pgrep", "-f", "train_lora.py.*phase1"], capture_output=True, text=True).returncode == 0
+        return {
+            "running": running,
+            "step": int(step_match[-1]) if step_match else 0,
+            "max_steps": 10000,
+            "loss": float(loss_match[-1]) if loss_match else 0,
+            "gpu": gpu,
+        }
+    except:
+        return {"running": False, "step": 0, "max_steps": 10000, "loss": 0, "gpu": "unknown"}
+
 @app.get("/api/health")
 async def health():
     ollama_ok = await check_ollama()
