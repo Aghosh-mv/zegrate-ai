@@ -1337,7 +1337,23 @@
 
   // Training Dashboard
   let trainLastStep = 0;
+  let trainLastTime = 0;
+  let trainSpeed = 0; // steps per second
   const TRAIN_GIST = '78eb3a0b4db48c73b1276974bd156008';
+  
+  function interpolateStep() {
+    if (trainSpeed > 0 && trainLastStep > 0) {
+      const elapsed = (Date.now() - trainLastTime) / 1000;
+      const estStep = Math.min(10000, Math.round(trainLastStep + elapsed * trainSpeed));
+      const sn = document.getElementById('trainStepNum');
+      if (sn) sn.textContent = estStep.toLocaleString();
+      const pf = document.getElementById('trainProgressFill');
+      const pt = document.getElementById('trainProgressText');
+      const pct = Math.round(estStep / 100);
+      if (pf) pf.style.width = pct + '%';
+      if (pt) pt.textContent = pct + '%';
+    }
+  }
   
   async function fetchTrainingStatus() {
     try {
@@ -1362,6 +1378,14 @@
       }
       if (!d.s) return;
       
+      // Calculate speed for interpolation
+      if (trainLastStep > 0 && d.s > trainLastStep) {
+        const timeDiff = (Date.now() - trainLastTime) / 1000;
+        if (timeDiff > 0) trainSpeed = (d.s - trainLastStep) / timeDiff;
+      }
+      trainLastStep = d.s;
+      trainLastTime = Date.now();
+      
       const badge = document.getElementById('trainLiveBadge');
       const lt = document.getElementById('trainLiveText');
       if (badge && lt) {
@@ -1378,14 +1402,12 @@
         else if (d.s < trainLastStep) { sa.textContent = '\u25BC'; sa.style.color = '#00ff88'; }
         else { sa.textContent = '\u2014'; sa.style.color = '#444'; }
       }
-      trainLastStep = d.s;
       
       const pf = document.getElementById('trainProgressFill');
       const pt = document.getElementById('trainProgressText');
       if (pf) pf.style.width = d.p + '%';
       if (pt) pt.textContent = d.p + '%';
       
-      // Phase bar
       const phb = document.getElementById('trainPhaseBar');
       if (phb) { phb.innerHTML = ''; for (let i = 0; i < 100; i++) { const s = document.createElement('div'); s.style.cssText = 'flex:1;height:8px;border-radius:4px;background:' + (i < d.p ? '#00ff88' : i === d.p ? '#00d4ff' : '#1a1a2e'); phb.appendChild(s); } }
       
@@ -1403,7 +1425,9 @@
     fetchTrainingStatus();
   };
   
-  setInterval(fetchTrainingStatus, 60000);
+  // Refresh from gist every 30s, interpolate every 1s
+  setInterval(fetchTrainingStatus, 30000);
+  setInterval(interpolateStep, 1000);
 
   document.addEventListener('DOMContentLoaded', init);
 })();
