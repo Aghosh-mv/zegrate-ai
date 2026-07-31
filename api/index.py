@@ -395,10 +395,6 @@ async def root():
             )
     return HTMLResponse("<h1>Zegrate AI</h1><p>Frontend not found</p>")
 
-@app.get("/status")
-async def training_dashboard():
-    return HTMLResponse(STATUS_PAGE, headers={"Cache-Control": "no-store"})
-
 @app.get("/api/status")
 async def status_page():
     import httpx

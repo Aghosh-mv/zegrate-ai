@@ -1335,5 +1335,75 @@
     if (state.selectedModel) await startNewChat();
   }
 
+  // Training Dashboard
+  let trainLastStep = 0;
+  const TRAIN_GIST = '78eb3a0b4db48c73b1276974bd156008';
+  
+  async function fetchTrainingStatus() {
+    try {
+      const gr = await fetch('https://api.github.com/gists/' + TRAIN_GIST);
+      const g = await gr.json();
+      const fi = g.files['training-status.txt'];
+      if (!fi) return;
+      const r = await fetch(fi.raw_url + '?t=' + Date.now());
+      const t = await r.text();
+      const el = document.getElementById('trainRaw');
+      if (el) el.textContent = t;
+      
+      const d = {};
+      for (const l of t.split('\n')) {
+        const m = l.match(/Progress:\s*(\d+)%.*?(\d+)\/10000/); if (m) { d.p = parseInt(m[1]); d.s = parseInt(m[2]); }
+        const lm = l.match(/Loss:\s*([0-9.]+)/); if (lm) d.lo = parseFloat(lm[1]);
+        const em = l.match(/Epoch:\s*([0-9.]+)/); if (em) d.e = parseFloat(em[1]);
+        const tm = l.match(/GPU:\s*(\d+)\s*MiB,\s*(\d+)/); if (tm) { d.g = parseInt(tm[1]); d.t = parseInt(tm[2]); }
+        const sm = l.match(/Speed:\s*([^\n]+)/); if (sm) d.sp = sm[1].trim();
+        if (l.includes('RUNNING')) d.r = true;
+        if (l.includes('STOPPED')) d.r = false;
+      }
+      if (!d.s) return;
+      
+      const badge = document.getElementById('trainLiveBadge');
+      const lt = document.getElementById('trainLiveText');
+      if (badge && lt) {
+        lt.textContent = d.r ? 'LIVE' : 'STOPPED';
+        badge.style.borderColor = d.r ? '#00ff88' : '#ff4444';
+        badge.style.background = d.r ? '#0a1a0a' : '#1a0a0a';
+      }
+      
+      const sn = document.getElementById('trainStepNum');
+      const sa = document.getElementById('trainStepArrow');
+      if (sn) sn.textContent = d.s.toLocaleString();
+      if (sa) {
+        if (d.s > trainLastStep) { sa.textContent = '\u25B2'; sa.style.color = '#ff4444'; }
+        else if (d.s < trainLastStep) { sa.textContent = '\u25BC'; sa.style.color = '#00ff88'; }
+        else { sa.textContent = '\u2014'; sa.style.color = '#444'; }
+      }
+      trainLastStep = d.s;
+      
+      const pf = document.getElementById('trainProgressFill');
+      const pt = document.getElementById('trainProgressText');
+      if (pf) pf.style.width = d.p + '%';
+      if (pt) pt.textContent = d.p + '%';
+      
+      // Phase bar
+      const phb = document.getElementById('trainPhaseBar');
+      if (phb) { phb.innerHTML = ''; for (let i = 0; i < 100; i++) { const s = document.createElement('div'); s.style.cssText = 'flex:1;height:8px;border-radius:4px;background:' + (i < d.p ? '#00ff88' : i === d.p ? '#00d4ff' : '#1a1a2e'); phb.appendChild(s); } }
+      
+      if (document.getElementById('trainLoss')) document.getElementById('trainLoss').textContent = d.lo ? d.lo.toFixed(4) : '---';
+      if (document.getElementById('trainTemp')) { document.getElementById('trainTemp').textContent = d.t ? d.t + '\u00B0C' : '---'; document.getElementById('trainTemp').style.color = d.t > 85 ? '#ff4444' : d.t > 70 ? '#ffaa00' : '#00ff88'; }
+      if (document.getElementById('trainMem')) document.getElementById('trainMem').textContent = d.g ? (d.g / 1024).toFixed(1) + 'GB' : '---';
+      if (document.getElementById('trainEpoch')) document.getElementById('trainEpoch').textContent = d.e ? d.e.toFixed(2) : '---';
+      if (document.getElementById('trainSpeed')) document.getElementById('trainSpeed').textContent = d.sp || '---';
+      if (d.s && d.sp) { const sm = d.sp.match(/([\d.]+)s\/it/); if (sm) { const h = ((10000 - d.s) * parseFloat(sm[1])) / 3600; const eta = document.getElementById('trainETA'); if (eta) eta.textContent = h > 24 ? Math.round(h / 24) + 'd' : h.toFixed(1) + 'h'; } }
+    } catch (e) { console.error('Training status error:', e); }
+  }
+  
+  window.openTrainingDashboard = function() {
+    document.getElementById('trainingModal').style.display = 'flex';
+    fetchTrainingStatus();
+  };
+  
+  setInterval(fetchTrainingStatus, 60000);
+
   document.addEventListener('DOMContentLoaded', init);
 })();

@@ -92,6 +92,7 @@
           <button id="shareBtn" class="icon-btn" title="Share chat" style="display:none">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
           </button>
+          <button class="icon-btn" title="Training Dashboard" onclick="openTrainingDashboard()" style="font-size:14px">&#9881;</button>
           <button id="connectBtn" class="icon-btn" title="Connect to local server">&#127760;</button>
           <button id="themeToggle" class="icon-btn" title="Toggle theme">&#9790;</button>
         </div>
@@ -268,6 +269,56 @@
       <div class="modal-footer">
         <button class="small-btn" onclick="closeResearch()">Cancel</button>
         <button id="startResearchBtn" class="small-btn primary">Start Research</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Training Dashboard Modal -->
+  <div id="trainingModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:800px;max-height:90vh;overflow-y:auto;background:#0a0a0f;color:#e0e0e0;font-family:'SF Mono','Fira Code',monospace">
+      <div class="modal-header" style="border-bottom:1px solid #1a1a2e">
+        <h2 style="background:linear-gradient(135deg,#00d4ff,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent">Training Dashboard</h2>
+        <button class="icon-btn modal-close" onclick="document.getElementById('trainingModal').style.display='none'">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:12px">
+        <div style="text-align:center;margin-bottom:12px">
+          <span id="trainLiveBadge" style="display:inline-flex;align-items:center;gap:6px;border:1px solid #ff3333;border-radius:12px;padding:3px 10px;font-size:11px;color:#ff4444">
+            <span style="width:6px;height:6px;border-radius:50%;background:#ff3333;animation:pulse 1.5s infinite"></span>
+            <span id="trainLiveText">LOADING...</span>
+          </span>
+        </div>
+        <div style="text-align:center;margin-bottom:12px">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px">Training Step</div>
+          <div><span id="trainStepNum" style="font-size:48px;font-weight:700;color:#00d4ff">---</span><span id="trainStepArrow" style="font-size:28px;margin-left:8px;color:#444"></span></div>
+          <div style="font-size:12px;color:#555">/ 10,000</div>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Progress</div>
+          <div style="width:100%;height:24px;background:#1a1a2e;border-radius:12px;overflow:hidden;position:relative">
+            <div id="trainProgressFill" style="height:100%;background:linear-gradient(90deg,#7b2ff7,#00d4ff);border-radius:12px;transition:width .6s;width:0%"></div>
+            <div id="trainProgressText" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;font-weight:700;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.8)">0%</div>
+          </div>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Phase</div>
+          <div id="trainPhaseBar" style="display:flex;gap:2px"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">
+          <div style="background:#0d0d14;border-radius:8px;padding:8px;text-align:center"><div style="font-size:9px;color:#555;margin-bottom:2px">LOSS</div><div id="trainLoss" style="font-size:18px;font-weight:700;color:#00ff88">---</div></div>
+          <div style="background:#0d0d14;border-radius:8px;padding:8px;text-align:center"><div style="font-size:9px;color:#555;margin-bottom:2px">GPU TEMP</div><div id="trainTemp" style="font-size:18px;font-weight:700;color:#ffaa00">---</div></div>
+          <div style="background:#0d0d14;border-radius:8px;padding:8px;text-align:center"><div style="font-size:9px;color:#555;margin-bottom:2px">GPU MEM</div><div id="trainMem" style="font-size:18px;font-weight:700;color:#00d4ff">---</div></div>
+          <div style="background:#0d0d14;border-radius:8px;padding:8px;text-align:center"><div style="font-size:9px;color:#555;margin-bottom:2px">EPOCH</div><div id="trainEpoch" style="font-size:18px;font-weight:700">---</div></div>
+          <div style="background:#0d0d14;border-radius:8px;padding:8px;text-align:center"><div style="font-size:9px;color:#555;margin-bottom:2px">SPEED</div><div id="trainSpeed" style="font-size:18px;font-weight:700">---</div></div>
+          <div style="background:#0d0d14;border-radius:8px;padding:8px;text-align:center"><div style="font-size:9px;color:#555;margin-bottom:2px">ETA</div><div id="trainETA" style="font-size:18px;font-weight:700">---</div></div>
+        </div>
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Events & Power Log</div>
+          <div id="trainEvents" style="max-height:120px;overflow-y:auto;font-size:10px"></div>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Raw Status</div>
+          <div id="trainRaw" style="background:#0d0d14;border-radius:8px;padding:8px;font-size:10px;color:#555;white-space:pre-wrap;max-height:80px;overflow-y:auto">Loading...</div>
+        </div>
       </div>
     </div>
   </div>
